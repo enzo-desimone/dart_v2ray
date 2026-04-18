@@ -54,9 +54,7 @@ class _DartV2rayHomePageState extends State<DartV2rayHomePage> {
   );
 
   StreamSubscription<ConnectionStatus>? _statusSubscription;
-  Timer? _windowsDiagnosticsTimer;
   ConnectionStatus _status = const ConnectionStatus();
-  DateTime? _lastStatusEventAt;
 
   bool _proxyOnly = false;
   bool _windowsRequireTun = false;
@@ -66,7 +64,6 @@ class _DartV2rayHomePageState extends State<DartV2rayHomePage> {
   bool _isStarting = false;
   bool _isStopping = false;
   bool _isCheckingDelay = false;
-  bool _isShowingDiagnostics = false;
   bool _isResettingLogs = false;
   bool _isShowingLogs = false;
   bool _consoleStatusLogsEnabled = true;
@@ -85,20 +82,17 @@ class _DartV2rayHomePageState extends State<DartV2rayHomePage> {
     _v2ray.startPersistentStatusListener();
     _statusSubscription = _v2ray.persistentStatusStream.listen((status) {
       if (!mounted) return;
-      _lastStatusEventAt = DateTime.now();
       _logStatusToConsole(status);
       setState(() {
         _status = status;
       });
     });
-    _startWindowsDiagnosticsConsolePump();
     _loadIntegratedTestShareLink(showFeedback: false);
   }
 
   @override
   void dispose() {
     _statusSubscription?.cancel();
-    _windowsDiagnosticsTimer?.cancel();
     _shareLinkController.dispose();
     _remarkController.dispose();
     _configController.dispose();
@@ -155,13 +149,6 @@ class _DartV2rayHomePageState extends State<DartV2rayHomePage> {
       _initialized &&
           !_isInitializing &&
           !_isStopping;
-
-  bool get _canOpenDiagnostics =>
-      _initialized &&
-          !_isInitializing &&
-          !_isStarting &&
-          !_isStopping &&
-          !_isShowingDiagnostics;
 
   bool get _canResetLogs =>
       !_isResettingLogs && !_isInitializing && !_isStarting && !_isStopping;
@@ -257,9 +244,6 @@ class _DartV2rayHomePageState extends State<DartV2rayHomePage> {
     }
     if (_isResettingLogs) {
       return 'Refreshing Windows debug logs';
-    }
-    if (_isShowingDiagnostics) {
-      return 'Loading Windows diagnostics';
     }
     if (_isShowingLogs) {
       return 'Loading captured logs';
@@ -444,46 +428,6 @@ class _DartV2rayHomePageState extends State<DartV2rayHomePage> {
     }
   }
 
-  Future<void> _showWindowsDiagnostics() async {
-    if (!_canOpenDiagnostics) return;
-
-    setState(() {
-      _isShowingDiagnostics = true;
-    });
-
-    try {
-      final Map<String, dynamic> diagnostics =
-      await _v2ray.getWindowsTrafficDiagnostics();
-      if (!mounted) return;
-
-      final String lines = diagnostics.entries
-          .map((entry) => '${entry.key}: ${entry.value}')
-          .join('\n');
-
-      await showDialog<void>(
-        context: context,
-        builder: (dialogContext) {
-          return AlertDialog(
-            title: const Text('Windows Diagnostics'),
-            content: SingleChildScrollView(child: Text(lines)),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(dialogContext).pop(),
-                child: const Text('Close'),
-              ),
-            ],
-          );
-        },
-      );
-    } finally {
-      if (mounted) {
-        setState(() {
-          _isShowingDiagnostics = false;
-        });
-      }
-    }
-  }
-
   Future<void> _enableWindowsDebugLogging({
     bool clearExistingLogs = true,
     bool showFeedback = true,
@@ -638,170 +582,6 @@ class _DartV2rayHomePageState extends State<DartV2rayHomePage> {
       'downTotal=${status.downloadBytesTotal}B '
       'duration=${status.durationSeconds}s',
     );
-  }
-
-  String _diagString(
-    Map<String, dynamic> diagnostics,
-    String key, [
-    String fallback = '',
-  ]) {
-    final Object? raw = diagnostics[key];
-    if (raw == null) return fallback;
-    final String value = raw.toString().trim();
-    return value.isEmpty ? fallback : value;
-  }
-
-  int _diagInt(Map<String, dynamic> diagnostics, String key, [int fallback = 0]) {
-    return int.tryParse(_diagString(diagnostics, key)) ?? fallback;
-  }
-
-  bool _diagBool(
-    Map<String, dynamic> diagnostics,
-    String key, [
-    bool fallback = false,
-  ]) {
-    final String value = _diagString(diagnostics, key).toLowerCase();
-    if (value == 'true' || value == '1') return true;
-    if (value == 'false' || value == '0') return false;
-    return fallback;
-  }
-
-  ConnectionStatus _statusFromDiagnostics(Map<String, dynamic> diagnostics) {
-    final String state = _diagString(diagnostics, 'state', _status.state);
-    final String phase = _diagString(
-      diagnostics,
-      'connection_phase',
-      _status.connectionPhase.isEmpty ? state : _status.connectionPhase,
-    );
-    final String transportMode = _diagString(
-      diagnostics,
-      'transport_mode',
-      _status.transportMode,
-    );
-    final String trafficSource = _diagString(
-      diagnostics,
-      'traffic_source',
-      _status.trafficSource,
-    );
-    final String trafficReason = _diagString(
-      diagnostics,
-      'traffic_reason',
-      _status.trafficReason,
-    );
-    final bool processRunning = _diagBool(
-      diagnostics,
-      'xray_process_running',
-      _status.isProcessRunning,
-    );
-
-    final String remainingRaw = _diagString(
-      diagnostics,
-      'remaining_auto_disconnect_seconds',
-    );
-    final int? remaining = remainingRaw.isEmpty
-        ? _status.remainingAutoDisconnectSeconds
-        : int.tryParse(remainingRaw) ?? _status.remainingAutoDisconnectSeconds;
-
-    return _status.copyWith(
-      state: state,
-      connectionPhase: phase,
-      transportMode: transportMode,
-      trafficSource: trafficSource,
-      trafficReason: trafficReason,
-      isProcessRunning: processRunning,
-      durationSeconds: _diagInt(
-        diagnostics,
-        'duration_seconds',
-        _status.durationSeconds,
-      ),
-      uploadSpeedBytesPerSecond: _diagInt(
-        diagnostics,
-        'upload_speed_bps',
-        _status.uploadSpeedBytesPerSecond,
-      ),
-      downloadSpeedBytesPerSecond: _diagInt(
-        diagnostics,
-        'download_speed_bps',
-        _status.downloadSpeedBytesPerSecond,
-      ),
-      uploadBytesTotal: _diagInt(
-        diagnostics,
-        'upload_total_bytes',
-        _status.uploadBytesTotal,
-      ),
-      downloadBytesTotal: _diagInt(
-        diagnostics,
-        'download_total_bytes',
-        _status.downloadBytesTotal,
-      ),
-      remainingAutoDisconnectSeconds: remaining,
-    );
-  }
-
-  bool _isStatusDifferent(ConnectionStatus a, ConnectionStatus b) {
-    return a.state != b.state ||
-        a.connectionPhase != b.connectionPhase ||
-        a.transportMode != b.transportMode ||
-        a.trafficSource != b.trafficSource ||
-        a.trafficReason != b.trafficReason ||
-        a.isProcessRunning != b.isProcessRunning ||
-        a.durationSeconds != b.durationSeconds ||
-        a.uploadSpeedBytesPerSecond != b.uploadSpeedBytesPerSecond ||
-        a.downloadSpeedBytesPerSecond != b.downloadSpeedBytesPerSecond ||
-        a.uploadBytesTotal != b.uploadBytesTotal ||
-        a.downloadBytesTotal != b.downloadBytesTotal ||
-        a.remainingAutoDisconnectSeconds != b.remainingAutoDisconnectSeconds;
-  }
-
-  void _startWindowsDiagnosticsConsolePump() {
-    _windowsDiagnosticsTimer?.cancel();
-    _windowsDiagnosticsTimer = Timer.periodic(const Duration(seconds: 3), (
-      _,
-    ) async {
-      if (!mounted) return;
-      if (!_hasLiveSession && !_isStarting) return;
-
-      final Map<String, dynamic> diagnostics =
-          await _v2ray.getWindowsTrafficDiagnostics();
-      if (diagnostics['supported'].toString() != 'true') {
-        return;
-      }
-
-      if (_consoleStatusLogsEnabled) {
-        final String timestamp = DateTime.now().toIso8601String();
-        debugPrint(
-          '[dart_v2ray][diag][$timestamp] '
-          'state=${diagnostics['state']} '
-          'phase=${diagnostics['connection_phase']} '
-          'transport=${diagnostics['transport_mode']} '
-          'source=${diagnostics['traffic_source']} '
-          'reason=${diagnostics['traffic_reason']} '
-          'processRunning=${diagnostics['xray_process_running']} '
-          'up=${diagnostics['upload_speed_bps']}B/s '
-          'down=${diagnostics['download_speed_bps']}B/s',
-        );
-      }
-
-      final ConnectionStatus fromDiagnostics = _statusFromDiagnostics(
-        diagnostics,
-      );
-      final bool streamLooksStale =
-          _lastStatusEventAt == null ||
-          DateTime.now().difference(_lastStatusEventAt!) >
-              const Duration(seconds: 6);
-      final bool statusChanged = _isStatusDifferent(_status, fromDiagnostics);
-      final bool coreConnectionMismatch =
-          _status.state != fromDiagnostics.state ||
-          _status.connectionPhase != fromDiagnostics.connectionPhase ||
-          _status.isProcessRunning != fromDiagnostics.isProcessRunning;
-
-      if (mounted && statusChanged && (streamLooksStale || coreConnectionMismatch)) {
-        setState(() {
-          _status = fromDiagnostics;
-        });
-        _logStatusToConsole(fromDiagnostics);
-      }
-    });
   }
 
   String _formatBytes(int bytes) {
@@ -1171,7 +951,7 @@ class _DartV2rayHomePageState extends State<DartV2rayHomePage> {
                     ),
                     const SizedBox(height: 6),
                     Text(
-                      'Use these when you need traffic diagnostics or captured plugin/Xray logs.',
+                      'Use these when you need captured plugin/Xray logs.',
                       style: Theme
                           .of(context)
                           .textTheme
@@ -1193,7 +973,7 @@ class _DartV2rayHomePageState extends State<DartV2rayHomePage> {
                       },
                       title: const Text('Console status logs'),
                       subtitle: const Text(
-                        'Print live status stream and periodic Windows diagnostics to the debug console.',
+                        'Print the live status stream to the debug console.',
                       ),
                     ),
                     const SizedBox(height: 8),
@@ -1201,21 +981,6 @@ class _DartV2rayHomePageState extends State<DartV2rayHomePage> {
                       spacing: 8,
                       runSpacing: 8,
                       children: [
-                        OutlinedButton.icon(
-                          onPressed: _canOpenDiagnostics
-                              ? _showWindowsDiagnostics
-                              : null,
-                          icon: Icon(
-                            _isShowingDiagnostics
-                                ? Icons.hourglass_bottom_rounded
-                                : Icons.monitor_heart_rounded,
-                          ),
-                          label: Text(
-                            _isShowingDiagnostics
-                                ? 'Loading diagnostics...'
-                                : 'Windows diagnostics',
-                          ),
-                        ),
                         OutlinedButton.icon(
                           onPressed: _canResetLogs
                               ? () => _enableWindowsDebugLogging()

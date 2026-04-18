@@ -139,13 +139,13 @@ Clears persisted auto-disconnect state.
 Returns the last auto-disconnect timestamp (milliseconds since epoch).
 
 - `Future<Map<String, dynamic>> getWindowsTrafficDiagnostics()`
-Returns Windows-specific connection-phase, process-state, traffic-source, and counter diagnostics.
+Windows-only diagnostics fallback for connection phase, process state, traffic source, and counters.
 
 - `Future<Map<String, dynamic>> getWindowsDebugLogs({int maxBytes = 16384})`
 Returns Windows log paths plus the tail of the plugin log and captured Xray log.
 
 - `Future<Map<String, dynamic>> buildWindowsBugReport({...})`
-Builds a generic Windows bug-report payload with diagnostics, log tails, and optional log file content ready to send to your backend/API.
+Builds a generic Windows bug-report payload with latest status snapshot, log tails, and optional log file content ready to send to your backend/API.
 
 - `Stream<ConnectionStatus> get onStatusChanged`
 Raw native status stream with connection lifecycle and traffic diagnostics fields.
@@ -312,14 +312,14 @@ await http.post(
 By default the Windows temp directory is used, typically `%TEMP%\dart_v2ray.log`
 and `%TEMP%\dart_v2ray_xray.log`.
 
-Windows diagnostics (`getWindowsTrafficDiagnostics()`) now also include:
-- `connection_phase`
-- `transport_mode`
-- `traffic_source`
-- `traffic_reason`
-- `xray_process_running`
+The status stream now carries extended connection fields on Windows, including:
+- `connectionPhase`
+- `transportMode`
+- `trafficSource`
+- `trafficReason`
+- `isProcessRunning`
 
-These keys are useful when status looks connected but traffic is still zero (for example `phase=READY` while waiting for first traffic sample).
+These fields are useful when status looks connected but traffic is still zero (for example `connectionPhase=READY` while waiting for first traffic sample).
 
 ### Linux
 

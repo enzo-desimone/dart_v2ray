@@ -25,6 +25,9 @@ export 'url/socks.dart';
 /// High-level API for managing V2Ray/Xray connections from Flutter.
 class DartV2ray {
   StreamSubscription<ConnectionStatus>? _persistentStatusSubscription;
+  Timer? _windowsStatusFallbackTimer;
+  DateTime? _lastNativeStatusAt;
+  bool _windowsStatusFallbackPollInFlight = false;
   final StreamController<ConnectionStatus> _statusController =
       StreamController<ConnectionStatus>.broadcast();
   ConnectionStatus _latestStatus = const ConnectionStatus();
@@ -157,8 +160,9 @@ class DartV2ray {
     return DartV2rayPlatform.instance.getAutoDisconnectTimestamp();
   }
 
-  /// Returns Windows-only diagnostics to troubleshoot connection state,
-  /// traffic counters, and source selection.
+  /// Windows-only diagnostics fallback.
+  ///
+  /// Prefer [onStatusChanged] / [latestStatus] for cross-platform status flow.
   Future<Map<String, dynamic>> getWindowsTrafficDiagnostics() {
     return DartV2rayPlatform.instance.getWindowsTrafficDiagnostics();
   }
@@ -172,7 +176,6 @@ class DartV2ray {
   ///
   /// This method combines:
   /// - windows debug log tails from native side
-  /// - windows traffic diagnostics
   /// - latest status snapshot from the persistent listener
   /// - optional direct file reads from native log paths
   ///
@@ -180,7 +183,6 @@ class DartV2ray {
   /// and deliver it through any transport (HTTP, email service, ticket system).
   Future<Map<String, dynamic>> buildWindowsBugReport({
     int tailMaxBytes = 16384,
-    bool includeTrafficDiagnostics = true,
     bool includeLatestStatus = true,
     bool includeLogFiles = true,
     int fullLogMaxBytes = 262144,
@@ -209,11 +211,6 @@ class DartV2ray {
       maxBytes: boundedTailBytes,
     );
     report['windows_debug_logs'] = windowsLogs;
-
-    if (includeTrafficDiagnostics) {
-      report['windows_traffic_diagnostics'] =
-          await getWindowsTrafficDiagnostics();
-    }
 
     if (includeLatestStatus) {
       report['latest_status'] = latestStatus.toMap();
@@ -263,14 +260,14 @@ class DartV2ray {
     if (_persistentStatusSubscription != null || _statusController.isClosed) {
       return;
     }
+    _lastNativeStatusAt = null;
     _persistentStatusSubscription = onStatusChanged.listen((
       ConnectionStatus status,
     ) {
-      _latestStatus = status;
-      if (!_statusController.isClosed) {
-        _statusController.add(status);
-      }
+      _lastNativeStatusAt = DateTime.now();
+      _emitStatus(status);
     });
+    _startWindowsStatusFallbackPump();
   }
 
   /// Broadcast status stream backed by the persistent listener.
@@ -284,8 +281,10 @@ class DartV2ray {
 
   /// Stops the persistent status listener.
   Future<void> stopPersistentStatusListener() async {
+    _stopWindowsStatusFallbackPump();
     await _persistentStatusSubscription?.cancel();
     _persistentStatusSubscription = null;
+    _lastNativeStatusAt = null;
   }
 
   /// Releases local stream resources created by this instance.
@@ -296,60 +295,187 @@ class DartV2ray {
     }
   }
 
-  /// Legacy alias for [initialize].
-  Future<void> initializeVless({
-    String notificationIconResourceType = 'mipmap',
-    String notificationIconResourceName = 'ic_launcher',
-    String providerBundleIdentifier = '',
-    String groupIdentifier = '',
-    bool allowVpnFromSettings = true,
-  }) {
-    return initialize(
-      notificationIconResourceType: notificationIconResourceType,
-      notificationIconResourceName: notificationIconResourceName,
-      providerBundleIdentifier: providerBundleIdentifier,
-      groupIdentifier: groupIdentifier,
-      allowVpnFromSettings: allowVpnFromSettings,
+  void _emitStatus(ConnectionStatus status) {
+    _latestStatus = status;
+    if (!_statusController.isClosed) {
+      _statusController.add(status);
+    }
+  }
+
+  void _startWindowsStatusFallbackPump() {
+    if (!Platform.isWindows || _windowsStatusFallbackTimer != null) {
+      return;
+    }
+
+    _windowsStatusFallbackTimer = Timer.periodic(const Duration(seconds: 3), (
+      _,
+    ) async {
+      if (_persistentStatusSubscription == null ||
+          _statusController.isClosed ||
+          _windowsStatusFallbackPollInFlight) {
+        return;
+      }
+      _windowsStatusFallbackPollInFlight = true;
+      try {
+        final Map<String, dynamic> diagnostics =
+            await getWindowsTrafficDiagnostics();
+        if (diagnostics['supported'].toString() != 'true') {
+          return;
+        }
+
+        final ConnectionStatus fromDiagnostics = _statusFromDiagnostics(
+          diagnostics,
+          _latestStatus,
+        );
+        final bool streamLooksStale =
+            _lastNativeStatusAt == null ||
+            DateTime.now().difference(_lastNativeStatusAt!) >
+                const Duration(seconds: 6);
+        final bool statusChanged = _isStatusDifferent(
+          _latestStatus,
+          fromDiagnostics,
+        );
+        final bool coreConnectionMismatch =
+            _latestStatus.state != fromDiagnostics.state ||
+            _latestStatus.connectionPhase != fromDiagnostics.connectionPhase ||
+            _latestStatus.isProcessRunning != fromDiagnostics.isProcessRunning;
+
+        if (statusChanged && (streamLooksStale || coreConnectionMismatch)) {
+          _emitStatus(fromDiagnostics);
+        }
+      } catch (_) {
+        // Best-effort fallback: keep stream-only mode if diagnostics fail.
+      } finally {
+        _windowsStatusFallbackPollInFlight = false;
+      }
+    });
+  }
+
+  void _stopWindowsStatusFallbackPump() {
+    _windowsStatusFallbackTimer?.cancel();
+    _windowsStatusFallbackTimer = null;
+    _windowsStatusFallbackPollInFlight = false;
+  }
+
+  static String _diagString(
+    Map<String, dynamic> diagnostics,
+    String key, [
+    String fallback = '',
+  ]) {
+    final Object? raw = diagnostics[key];
+    if (raw == null) return fallback;
+    final String value = raw.toString().trim();
+    return value.isEmpty ? fallback : value;
+  }
+
+  static int _diagInt(
+    Map<String, dynamic> diagnostics,
+    String key, [
+    int fallback = 0,
+  ]) {
+    return int.tryParse(_diagString(diagnostics, key)) ?? fallback;
+  }
+
+  static bool _diagBool(
+    Map<String, dynamic> diagnostics,
+    String key, [
+    bool fallback = false,
+  ]) {
+    final String value = _diagString(diagnostics, key).toLowerCase();
+    if (value == 'true' || value == '1') return true;
+    if (value == 'false' || value == '0') return false;
+    return fallback;
+  }
+
+  static bool _isStatusDifferent(ConnectionStatus a, ConnectionStatus b) {
+    return a.state != b.state ||
+        a.connectionPhase != b.connectionPhase ||
+        a.transportMode != b.transportMode ||
+        a.trafficSource != b.trafficSource ||
+        a.trafficReason != b.trafficReason ||
+        a.isProcessRunning != b.isProcessRunning ||
+        a.durationSeconds != b.durationSeconds ||
+        a.uploadSpeedBytesPerSecond != b.uploadSpeedBytesPerSecond ||
+        a.downloadSpeedBytesPerSecond != b.downloadSpeedBytesPerSecond ||
+        a.uploadBytesTotal != b.uploadBytesTotal ||
+        a.downloadBytesTotal != b.downloadBytesTotal ||
+        a.remainingAutoDisconnectSeconds != b.remainingAutoDisconnectSeconds;
+  }
+
+  static ConnectionStatus _statusFromDiagnostics(
+    Map<String, dynamic> diagnostics,
+    ConnectionStatus fallback,
+  ) {
+    final String state = _diagString(diagnostics, 'state', fallback.state);
+    final String phase = _diagString(
+      diagnostics,
+      'connection_phase',
+      fallback.connectionPhase.isEmpty ? state : fallback.connectionPhase,
+    );
+    final String transportMode = _diagString(
+      diagnostics,
+      'transport_mode',
+      fallback.transportMode,
+    );
+    final String trafficSource = _diagString(
+      diagnostics,
+      'traffic_source',
+      fallback.trafficSource,
+    );
+    final String trafficReason = _diagString(
+      diagnostics,
+      'traffic_reason',
+      fallback.trafficReason,
+    );
+    final bool processRunning = _diagBool(
+      diagnostics,
+      'xray_process_running',
+      fallback.isProcessRunning,
+    );
+
+    final String remainingRaw = _diagString(
+      diagnostics,
+      'remaining_auto_disconnect_seconds',
+    );
+    final int? remaining = remainingRaw.isEmpty
+        ? fallback.remainingAutoDisconnectSeconds
+        : int.tryParse(remainingRaw) ?? fallback.remainingAutoDisconnectSeconds;
+
+    return fallback.copyWith(
+      state: state,
+      connectionPhase: phase,
+      transportMode: transportMode,
+      trafficSource: trafficSource,
+      trafficReason: trafficReason,
+      isProcessRunning: processRunning,
+      durationSeconds: _diagInt(
+        diagnostics,
+        'duration_seconds',
+        fallback.durationSeconds,
+      ),
+      uploadSpeedBytesPerSecond: _diagInt(
+        diagnostics,
+        'upload_speed_bps',
+        fallback.uploadSpeedBytesPerSecond,
+      ),
+      downloadSpeedBytesPerSecond: _diagInt(
+        diagnostics,
+        'download_speed_bps',
+        fallback.downloadSpeedBytesPerSecond,
+      ),
+      uploadBytesTotal: _diagInt(
+        diagnostics,
+        'upload_total_bytes',
+        fallback.uploadBytesTotal,
+      ),
+      downloadBytesTotal: _diagInt(
+        diagnostics,
+        'download_total_bytes',
+        fallback.downloadBytesTotal,
+      ),
+      remainingAutoDisconnectSeconds: remaining,
     );
   }
-
-  /// Legacy alias for [start].
-  Future<void> startVless({
-    required String remark,
-    required String config,
-    List<String>? blockedApps,
-    List<String>? bypassSubnets,
-    List<String>? dnsServers,
-    bool proxyOnly = false,
-    String notificationDisconnectButtonName = 'DISCONNECT',
-    bool showNotificationDisconnectButton = true,
-    AutoDisconnectConfig? autoDisconnect,
-    bool windowsRequireTun = false,
-  }) {
-    return start(
-      remark: remark,
-      config: config,
-      blockedApps: blockedApps,
-      bypassSubnets: bypassSubnets,
-      dnsServers: dnsServers,
-      proxyOnly: proxyOnly,
-      notificationDisconnectButtonName: notificationDisconnectButtonName,
-      showNotificationDisconnectButton: showNotificationDisconnectButton,
-      autoDisconnect: autoDisconnect,
-      windowsRequireTun: windowsRequireTun,
-    );
-  }
-
-  /// Legacy alias for [stop].
-  Future<void> stopVless() => stop();
-
-  /// Legacy alias for [getWindowsTrafficDiagnostics].
-  Future<Map<String, dynamic>> getWindowsTrafficSource() {
-    return getWindowsTrafficDiagnostics();
-  }
-
-  /// Legacy alias for [parseShareLink].
-  static V2rayUrl parseFromURL(String link) => parseShareLink(link);
 
   static Future<Map<String, dynamic>> _readWindowsLogFiles(
     Map<String, dynamic> windowsLogs, {

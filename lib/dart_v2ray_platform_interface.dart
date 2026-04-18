@@ -130,7 +130,7 @@ abstract class DartV2rayPlatform extends PlatformInterface {
     );
   }
 
-  /// Windows-only diagnostics for connection phase, traffic source,
+  /// Windows-only diagnostics fallback for connection phase, traffic source,
   /// process state, and counters.
   Future<Map<String, dynamic>> getWindowsTrafficDiagnostics() {
     throw UnimplementedError(
