@@ -35,10 +35,15 @@ await v2ray.start(
   remark: 'macOS profile',
   config: configJson,
   proxyOnly: true,
+  windowsRequireTun: false,
 );
 ```
 
 `proxyOnly: true` is the recommended default rollout for macOS desktop builds.
+
+To force full-tunnel routing on macOS, set `windowsRequireTun: true`.
+When enabled, the desktop core injects TUN inbound/routing config and fails
+fast if a TUN config cannot be constructed from the provided JSON.
 
 ## Notes
 
@@ -46,6 +51,8 @@ await v2ray.start(
 - `onStatusChanged` emits the same payload contract used by desktop targets.
 - Windows-only diagnostics methods remain callable and return
   `{"supported":"false","reason":"windows_only"}` on macOS.
+- Full-tunnel TUN behavior depends on macOS runtime permissions/signing model of
+  your app distribution.
 
 ## Troubleshooting
 

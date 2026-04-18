@@ -154,7 +154,7 @@ class _DartV2rayHomePageState extends State<DartV2rayHomePage> {
       return 'Proxy only';
     }
     if (_windowsRequireTun) {
-      return 'Windows TUN required';
+      return 'Desktop TUN required';
     }
     return 'Auto VPN / TUN';
   }
@@ -906,9 +906,9 @@ class _DartV2rayHomePageState extends State<DartV2rayHomePage> {
                           ? (value) =>
                                 setState(() => _windowsRequireTun = value)
                           : null,
-                      title: const Text('Windows: force TUN mode'),
+                      title: const Text('Desktop: force TUN mode'),
                       subtitle: const Text(
-                        'Fail fast if Windows cannot start the TUN session.',
+                        'Fail fast if Windows/macOS cannot start the TUN session.',
                       ),
                     ),
                   ],

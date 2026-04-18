@@ -12,7 +12,7 @@ share-link parsing (`vless://`, `vmess://`, `trojan://`, `ss://`, `socks://`).
 | iOS | Available | Requires Packet Tunnel setup and XCFramework source |
 | Windows | Available | Production-ready; tested by project team |
 | Linux | Available | Desktop support via shared native core (not yet fully team-validated) |
-| macOS | Available | Desktop support via shared native core (proxy-first workflow) |
+| macOS | Available | Desktop support via shared native core (proxy-first, optional forced TUN) |
 
 ## Installation
 
@@ -51,6 +51,8 @@ Future<void> connect(String configJson) async {
   );
 }
 ```
+
+`windowsRequireTun: true` forces TUN mode on Windows and macOS desktop flows.
 
 ## Core API
 

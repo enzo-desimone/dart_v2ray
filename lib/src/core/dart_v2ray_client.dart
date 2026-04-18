@@ -50,6 +50,8 @@ class DartV2ray {
   /// Starts a connection with a full Xray JSON configuration.
   ///
   /// Set [proxyOnly] to `true` to run local proxy mode without system-wide VPN.
+  /// Set [windowsRequireTun] to `true` to force TUN mode on supported desktop
+  /// targets (Windows and macOS).
   Future<void> start({
     required String remark,
     required String config,

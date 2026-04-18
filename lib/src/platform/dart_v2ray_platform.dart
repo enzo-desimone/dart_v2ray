@@ -41,6 +41,9 @@ abstract class DartV2rayPlatform extends PlatformInterface {
   }
 
   /// Starts a connection from an Xray JSON config.
+  ///
+  /// [windowsRequireTun] is honored by desktop implementations that support
+  /// forced TUN mode (Windows and macOS).
   Future<void> start({
     required String remark,
     required String config,

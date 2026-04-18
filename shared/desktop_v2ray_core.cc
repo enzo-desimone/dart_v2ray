@@ -718,6 +718,260 @@ bool ReadInterfaceTrafficCounters(unsigned int interface_index,
 }  // namespace
 #endif
 
+#if defined(__APPLE__)
+namespace {
+size_t FindMatchingBracketForApple(const std::string& input, size_t open_pos, char open_bracket,
+                                   char close_bracket) {
+  int depth = 0;
+  for (size_t i = open_pos; i < input.size(); ++i) {
+    if (input[i] == open_bracket) {
+      ++depth;
+    } else if (input[i] == close_bracket) {
+      --depth;
+      if (depth == 0) {
+        return i;
+      }
+    }
+  }
+  return std::string::npos;
+}
+
+size_t FindRootObjectEndForApple(const std::string& input) {
+  bool in_string = false;
+  bool escape = false;
+  int depth = 0;
+  for (size_t i = 0; i < input.size(); ++i) {
+    char c = input[i];
+    if (escape) {
+      escape = false;
+      continue;
+    }
+    if (c == '\\') {
+      escape = true;
+      continue;
+    }
+    if (c == '"') {
+      in_string = !in_string;
+      continue;
+    }
+    if (in_string) {
+      continue;
+    }
+    if (c == '{') {
+      ++depth;
+    } else if (c == '}') {
+      --depth;
+      if (depth == 0) {
+        return i;
+      }
+    }
+  }
+  return std::string::npos;
+}
+
+std::string ExtractOutboundsSliceForApple(const std::string& config) {
+  const std::string outbounds_key = "\"outbounds\"";
+  const size_t outbounds_pos = config.find(outbounds_key);
+  if (outbounds_pos == std::string::npos) {
+    return "";
+  }
+
+  const size_t array_start = config.find('[', outbounds_pos);
+  if (array_start == std::string::npos) {
+    return "";
+  }
+
+  const size_t array_end = FindMatchingBracketForApple(config, array_start, '[', ']');
+  if (array_end == std::string::npos || array_end <= array_start) {
+    return "";
+  }
+
+  return config.substr(array_start, array_end - array_start + 1);
+}
+
+std::string FindPreferredOutboundTagForApple(const std::string& config) {
+  const std::string outbounds_slice = ExtractOutboundsSliceForApple(config);
+  if (outbounds_slice.empty()) {
+    return "";
+  }
+
+  const std::regex tag_pattern("\"tag\"\\s*:\\s*\"([^\"]+)\"");
+  std::string first_tag;
+  for (std::sregex_iterator it(outbounds_slice.begin(), outbounds_slice.end(), tag_pattern), end;
+       it != end; ++it) {
+    const std::string tag = (*it)[1].str();
+    if (first_tag.empty()) {
+      first_tag = tag;
+    }
+    if (tag == "proxy") {
+      return tag;
+    }
+  }
+
+  return first_tag;
+}
+
+bool InsertAppleTunInbound(std::string* config, const std::vector<std::string>& dns_servers) {
+  const std::string inbound_tag = "\"tag\":\"dart_v2ray_tun_in\"";
+  if (config->find(inbound_tag) != std::string::npos) {
+    return true;
+  }
+
+  std::ostringstream tun_inbound;
+  tun_inbound
+      << "{"
+      << "\"tag\":\"dart_v2ray_tun_in\","
+      << "\"protocol\":\"tun\","
+      << "\"settings\":{"
+      << "\"mtu\":1500,"
+      << "\"stack\":\"system\","
+      << "\"sniffing\":true,"
+      << "\"autoRoute\":true,"
+      << "\"strictRoute\":true,"
+      << "\"address\":[\"172.19.0.2/30\",\"fdfe:dcba:9876::2/126\"],"
+      << "\"gateway\":\"172.19.0.1\"";
+
+  if (!dns_servers.empty()) {
+    tun_inbound << ",\"dns\":[";
+    for (size_t i = 0; i < dns_servers.size(); ++i) {
+      if (i > 0) {
+        tun_inbound << ',';
+      }
+      tun_inbound << '"' << dns_servers[i] << '"';
+    }
+    tun_inbound << ']';
+  }
+
+  tun_inbound << "}}";
+
+  const std::string key = "\"inbounds\"";
+  const size_t key_pos = config->find(key);
+  if (key_pos == std::string::npos) {
+    const size_t root_end = FindRootObjectEndForApple(*config);
+    if (root_end == std::string::npos) {
+      return false;
+    }
+
+    const bool prepend_comma = root_end > 0 && (*config)[root_end - 1] != '{';
+    config->insert(root_end,
+                   (prepend_comma ? "," : "") +
+                       std::string("\"inbounds\":[") + tun_inbound.str() + "]");
+    return true;
+  }
+
+  size_t array_start = config->find('[', key_pos);
+  if (array_start == std::string::npos) {
+    return false;
+  }
+  size_t array_end = FindMatchingBracketForApple(*config, array_start, '[', ']');
+  if (array_end == std::string::npos) {
+    return false;
+  }
+
+  const std::string array_body = config->substr(array_start + 1, array_end - array_start - 1);
+  const bool empty = array_body.find_first_not_of(" \t\r\n") == std::string::npos;
+
+  config->insert(array_end, (empty ? "" : ",") + tun_inbound.str());
+  return true;
+}
+
+bool InjectAppleDnsServers(std::string* config, const std::vector<std::string>& dns_servers) {
+  std::vector<std::string> effective_dns = dns_servers;
+  if (effective_dns.empty()) {
+    effective_dns = {"8.8.8.8", "1.1.1.1"};
+  }
+
+  std::ostringstream servers;
+  servers << "\"dns\":{\"servers\":[";
+  for (size_t i = 0; i < effective_dns.size(); ++i) {
+    if (i > 0) {
+      servers << ',';
+    }
+    servers << '"' << effective_dns[i] << '"';
+  }
+  servers << "]}";
+
+  const std::string dns_key = "\"dns\"";
+  const size_t dns_pos = config->find(dns_key);
+  if (dns_pos != std::string::npos) {
+    size_t dns_obj_start = config->find('{', dns_pos);
+    if (dns_obj_start == std::string::npos) {
+      return false;
+    }
+    size_t dns_obj_end = FindMatchingBracketForApple(*config, dns_obj_start, '{', '}');
+    if (dns_obj_end == std::string::npos) {
+      return false;
+    }
+    config->replace(dns_pos, dns_obj_end - dns_pos + 1, servers.str());
+    return true;
+  }
+
+  const size_t root_end = FindRootObjectEndForApple(*config);
+  if (root_end == std::string::npos) {
+    return false;
+  }
+
+  const bool prepend_comma = root_end > 0 && (*config)[root_end - 1] != '{';
+  config->insert(root_end, (prepend_comma ? "," : "") + servers.str());
+  return true;
+}
+
+bool InjectAppleTunRouting(std::string* config) {
+  const std::string routing_key = "\"routing\"";
+  const std::string outbound_tag = FindPreferredOutboundTagForApple(*config);
+  if (outbound_tag.empty()) {
+    return false;
+  }
+  const std::string rule =
+      "{\"type\":\"field\",\"inboundTag\":[\"dart_v2ray_tun_in\"],\"outboundTag\":\"" +
+      outbound_tag + "\"}";
+
+  const size_t routing_pos = config->find(routing_key);
+  if (routing_pos != std::string::npos) {
+    size_t obj_start = config->find('{', routing_pos);
+    if (obj_start == std::string::npos) {
+      return false;
+    }
+    size_t rules_pos = config->find("\"rules\"", obj_start);
+    if (rules_pos != std::string::npos) {
+      size_t array_start = config->find('[', rules_pos);
+      if (array_start == std::string::npos) {
+        return false;
+      }
+      size_t array_end = FindMatchingBracketForApple(*config, array_start, '[', ']');
+      if (array_end == std::string::npos) {
+        return false;
+      }
+      const std::string body = config->substr(array_start + 1, array_end - array_start - 1);
+      const bool empty = body.find_first_not_of(" \t\r\n") == std::string::npos;
+      config->insert(array_end, (empty ? "" : ",") + rule);
+      return true;
+    }
+
+    size_t obj_end = FindMatchingBracketForApple(*config, obj_start, '{', '}');
+    if (obj_end == std::string::npos) {
+      return false;
+    }
+    const std::string inner = config->substr(obj_start + 1, obj_end - obj_start - 1);
+    const bool empty = inner.find_first_not_of(" \t\r\n") == std::string::npos;
+    config->insert(obj_end, std::string(empty ? "" : ",") + "\"rules\":[" + rule + "]");
+    return true;
+  }
+
+  const size_t root_end = FindRootObjectEndForApple(*config);
+  if (root_end == std::string::npos) {
+    return false;
+  }
+  const bool prepend_comma = root_end > 0 && (*config)[root_end - 1] != '{';
+  config->insert(root_end,
+                 (prepend_comma ? "," : "") +
+                     std::string("\"routing\":{\"domainStrategy\":\"UseIp\",\"rules\":[") +
+                     rule + "]}");
+  return true;
+}
+}  // namespace
+#endif
+
 struct DesktopV2rayCore::ProcessHandle {
 #if defined(_WIN32)
   PROCESS_INFORMATION pi{};
@@ -1053,6 +1307,35 @@ std::string DesktopV2rayCore::BuildEffectiveConfig(const std::string& base_confi
     LogLine("effective_config prepared for TUN (bytes=" + std::to_string(tuned.size()) + ")");
   }
   return tuned;
+#elif defined(__APPLE__)
+  if (options.proxy_only || !options.require_tun) {
+    return base_config;
+  }
+
+  std::string tuned = base_config;
+  if (!InsertAppleTunInbound(&tuned, options.dns_servers)) {
+    *mode_note = "tun_config_invalid";
+    return "";
+  }
+
+  if (!InjectAppleDnsServers(&tuned, options.dns_servers)) {
+    *mode_note = "tun_dns_invalid";
+    return "";
+  }
+
+  if (FindPreferredOutboundTagForApple(tuned).empty()) {
+    *mode_note = "tun_missing_outbound_tag";
+    return "";
+  }
+
+  if (!InjectAppleTunRouting(&tuned)) {
+    *mode_note = "tun_routing_invalid";
+    return "";
+  }
+
+  *use_tun = true;
+  *mode_note = "tun";
+  return tuned;
 #else
   (void)options;
   return base_config;
@@ -1123,11 +1406,12 @@ std::string DesktopV2rayCore::Start(const std::string& config, const StartOption
 #endif
       return "Windows TUN mode requested but wintun.dll was not found.";
     }
-    if (mode_note == "proxy_fallback_missing_outbound_tag") {
+    if (mode_note == "proxy_fallback_missing_outbound_tag" ||
+        mode_note == "tun_missing_outbound_tag") {
 #if defined(_WIN32)
       LogLine("Start failed: Windows TUN mode requires at least one outbound tag.");
 #endif
-      return "Windows TUN mode requires at least one outbound with a tag. Use tag \"proxy\" or any tagged outbound.";
+      return "TUN mode requires at least one outbound with a tag. Use tag \"proxy\" or any tagged outbound.";
     }
 #if defined(_WIN32)
     LogLine("Start failed: unable to construct TUN config. mode_note=" + mode_note);
