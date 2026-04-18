@@ -5,7 +5,7 @@ This guide covers Linux-specific setup for `dart_v2ray`.
 ## Current Status
 
 - Plugin implementation: available
-- Team validation status: implementation present; test status depends on your distro/runtime
+- Team validation status: implementation present; not yet fully validated by project team
 
 ## Requirements
 

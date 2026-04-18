@@ -26,6 +26,8 @@ flutter:
         pluginClass: DartV2rayPlugin
       ios:
         pluginClass: DartV2rayPlugin
+      macos:
+        pluginClass: DartV2rayPlugin
       linux:
         pluginClass: DartV2rayPlugin
       windows:

@@ -853,7 +853,12 @@ DesktopV2rayCore::RuntimePaths DesktopV2rayCore::DiscoverRuntimePaths() const {
 
 std::string DesktopV2rayCore::ValidateRuntime(const RuntimePaths& paths, bool tun_requested) const {
   if (paths.xray_executable.empty()) {
+#if defined(_WIN32)
     const std::string error = BuildMissingXrayError();
+#else
+    const std::string error =
+        "xray executable could not be located. Set XRAY_EXECUTABLE or add xray to PATH.";
+#endif
 #if defined(_WIN32)
     LogLine("ValidateRuntime failed: " + error);
 #endif
@@ -1002,7 +1007,22 @@ std::string DesktopV2rayCore::Start(const std::string& config, const StartOption
     return runtime_error;
   }
 
-  if (!HasUsableOutbounds(config)) {
+  bool has_usable_outbounds = false;
+#if defined(_WIN32)
+  has_usable_outbounds = HasUsableOutbounds(config);
+#else
+  const size_t outbounds_pos = config.find("\"outbounds\"");
+  if (outbounds_pos != std::string::npos) {
+    const size_t array_start = config.find('[', outbounds_pos);
+    if (array_start != std::string::npos) {
+      const size_t array_end = config.find(']', array_start);
+      has_usable_outbounds =
+          array_end != std::string::npos && config.find('{', array_start) != std::string::npos;
+    }
+  }
+#endif
+
+  if (!has_usable_outbounds) {
 #if defined(_WIN32)
     LogLine("Start aborted: provided config does not contain any usable outbounds.");
 #endif
@@ -2369,4 +2389,3 @@ void DesktopV2rayCore::StopAutoDisconnectTimer() {
 }
 
 }  // namespace dart_v2ray
-

@@ -25,6 +25,8 @@
   Windows diagnostics interpretation.
 - iOS podspec now uses a default hosted `XRay.xcframework.zip` URL with
   SHA256 verification, while still allowing environment-variable overrides.
+- Added native macOS plugin registration and implementation reusing the shared
+  desktop core (`macos/`), including status stream and auto-disconnect methods.
 
 ## 0.1.0
 

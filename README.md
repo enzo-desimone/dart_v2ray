@@ -11,8 +11,8 @@ share-link parsing (`vless://`, `vmess://`, `trojan://`, `ss://`, `socks://`).
 | Android | Available | Production-ready; tested by project team |
 | iOS | Available | Requires Packet Tunnel setup and XCFramework source |
 | Windows | Available | Production-ready; tested by project team |
-| Linux | Available | Desktop support via shared native core |
-| macOS | Not yet shipped in plugin registration | Guide includes preparation steps |
+| Linux | Available | Desktop support via shared native core (not yet fully team-validated) |
+| macOS | Available | Desktop support via shared native core (proxy-first workflow) |
 
 ## Installation
 
