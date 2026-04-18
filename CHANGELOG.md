@@ -23,6 +23,8 @@
   console status logging, and periodic diagnostics polling.
 - Updated English README/API docs for the new status model and
   Windows diagnostics interpretation.
+- iOS podspec now uses a default hosted `XRay.xcframework.zip` URL with
+  SHA256 verification, while still allowing environment-variable overrides.
 
 ## 0.1.0
 

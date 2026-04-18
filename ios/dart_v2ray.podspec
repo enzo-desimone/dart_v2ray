@@ -27,10 +27,11 @@ auto-disconnect support.
       exit 0
     fi
 
-    # To keep this plugin fully independent, no external URL is hardcoded.
-    # Provide your own framework source through environment variables.
-    FRAMEWORK_URL="${DART_V2RAY_IOS_FRAMEWORK_URL:-}"
-    FRAMEWORK_SHA256="${DART_V2RAY_IOS_FRAMEWORK_SHA256:-}"
+    # Default hosted framework source (override with env vars if needed).
+    DEFAULT_FRAMEWORK_URL="https://github.com/shafiquecbl/flutter_v2ray_plus/releases/download/framework-v1.0.0/XRay.xcframework.zip"
+    DEFAULT_FRAMEWORK_SHA256="ab14d797a3efe5cd148054e7bd1923d95b355cee9b0a36e5a81782c6fd517d1a"
+    FRAMEWORK_URL="${DART_V2RAY_IOS_FRAMEWORK_URL:-$DEFAULT_FRAMEWORK_URL}"
+    FRAMEWORK_SHA256="${DART_V2RAY_IOS_FRAMEWORK_SHA256:-$DEFAULT_FRAMEWORK_SHA256}"
     FRAMEWORK_ZIP_PATH="${DART_V2RAY_IOS_FRAMEWORK_ZIP_PATH:-}"
 
     rm -rf "$FRAMEWORK_DIR" "$FRAMEWORK_ZIP"
@@ -42,13 +43,6 @@ auto-disconnect support.
       fi
       cp "$FRAMEWORK_ZIP_PATH" "$FRAMEWORK_ZIP"
     else
-      if [ -z "$FRAMEWORK_URL" ] || [ -z "$FRAMEWORK_SHA256" ]; then
-        echo "dart_v2ray: missing iOS framework source." >&2
-        echo "Set one of the following before 'pod install':" >&2
-        echo "1) DART_V2RAY_IOS_FRAMEWORK_ZIP_PATH=/absolute/path/XRay.xcframework.zip" >&2
-        echo "2) DART_V2RAY_IOS_FRAMEWORK_URL=<https://...> and DART_V2RAY_IOS_FRAMEWORK_SHA256=<sha256>" >&2
-        exit 1
-      fi
       curl -fL -o "$FRAMEWORK_ZIP" "$FRAMEWORK_URL"
       echo "$FRAMEWORK_SHA256  $FRAMEWORK_ZIP" | shasum -a 256 -c -
     fi

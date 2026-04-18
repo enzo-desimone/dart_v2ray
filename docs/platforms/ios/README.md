@@ -28,7 +28,16 @@ provisioning setup.
 
 ## Framework Source
 
-Before running CocoaPods install, configure one of the following:
+By default, the plugin downloads this hosted archive and verifies it with SHA256:
+
+```text
+https://github.com/shafiquecbl/flutter_v2ray_plus/releases/download/framework-v1.0.0/XRay.xcframework.zip
+SHA256: ab14d797a3efe5cd148054e7bd1923d95b355cee9b0a36e5a81782c6fd517d1a
+```
+
+No extra setup is required for default behavior.
+
+If you need a different source, configure one of the following before `pod install`:
 
 ```bash
 # Option 1: local archive
