@@ -97,16 +97,33 @@ static FlMethodResponse* handle_method_call(DartV2rayPlugin* self,
           "invalid_arguments", "Missing config JSON string.", nullptr));
     }
 
-    bool proxy_only = false;
-    FlValue* proxy_only_value = fl_value_lookup_string(args, "proxy_only");
-    if (proxy_only_value != nullptr &&
-        fl_value_get_type(proxy_only_value) == FL_VALUE_TYPE_BOOL) {
-      proxy_only = fl_value_get_bool(proxy_only_value);
+    std::optional<bool> require_tun;
+    FlValue* require_tun_value = fl_value_lookup_string(args, "require_tun");
+    if (require_tun_value != nullptr &&
+        fl_value_get_type(require_tun_value) == FL_VALUE_TYPE_BOOL) {
+      require_tun = fl_value_get_bool(require_tun_value);
+    }
+
+    if (!require_tun.has_value()) {
+      FlValue* legacy_require_tun_value = fl_value_lookup_string(args, "windows_require_tun");
+      if (legacy_require_tun_value != nullptr &&
+          fl_value_get_type(legacy_require_tun_value) == FL_VALUE_TYPE_BOOL) {
+        require_tun = fl_value_get_bool(legacy_require_tun_value);
+      }
+    }
+
+    if (!require_tun.has_value()) {
+      FlValue* proxy_only_value = fl_value_lookup_string(args, "proxy_only");
+      if (proxy_only_value != nullptr &&
+          fl_value_get_type(proxy_only_value) == FL_VALUE_TYPE_BOOL) {
+        require_tun = !fl_value_get_bool(proxy_only_value);
+      }
     }
 
     const std::optional<int> duration = extract_auto_disconnect_duration(args);
     dart_v2ray::DesktopV2rayCore::StartOptions options;
-    options.proxy_only = proxy_only;
+    options.require_tun = require_tun.value_or(false);
+    options.proxy_only = !options.require_tun;
     options.auto_disconnect_seconds = duration;
 
     const std::string error =
@@ -270,4 +287,3 @@ void dart_v2ray_plugin_register_with_registrar(FlPluginRegistrar* registrar) {
 
   g_object_unref(plugin);
 }
-

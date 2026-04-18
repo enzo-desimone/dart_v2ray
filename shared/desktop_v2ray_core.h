@@ -17,6 +17,7 @@ namespace dart_v2ray {
 class DesktopV2rayCore {
  public:
   struct StartOptions {
+    // Legacy compatibility field. Current mode contract is driven by require_tun.
     bool proxy_only = false;
     std::optional<int> auto_disconnect_seconds;
     std::vector<std::string> bypass_subnets;
@@ -142,4 +143,3 @@ class DesktopV2rayCore {
 }  // namespace dart_v2ray
 
 #endif  // FLUTTER_PLUGIN_DESKTOP_V2RAY_CORE_H_
-

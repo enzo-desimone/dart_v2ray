@@ -8,6 +8,7 @@ class FakeDartV2rayPlatform extends DartV2rayPlatform
     with MockPlatformInterfaceMixin {
   bool requestPermissionResult = true;
   bool startCalled = false;
+  bool lastRequireTun = false;
 
   @override
   Future<void> initialize({
@@ -26,12 +27,12 @@ class FakeDartV2rayPlatform extends DartV2rayPlatform
     List<String>? blockedApps,
     List<String>? bypassSubnets,
     List<String>? dnsServers,
-    bool proxyOnly = false,
+    bool requireTun = false,
     bool showNotificationDisconnectButton = true,
     AutoDisconnectConfig? autoDisconnect,
-    bool windowsRequireTun = false,
   }) async {
     startCalled = true;
+    lastRequireTun = requireTun;
   }
 
   @override
@@ -135,6 +136,22 @@ void main() {
     await plugin.start(remark: 'test', config: '{"outbounds":[{}]}');
 
     expect(fakePlatform.startCalled, isTrue);
+    expect(fakePlatform.lastRequireTun, isFalse);
+  });
+
+  test('start forwards requireTun=true', () async {
+    final plugin = DartV2ray();
+    final fakePlatform = FakeDartV2rayPlatform();
+    DartV2rayPlatform.instance = fakePlatform;
+
+    await plugin.start(
+      remark: 'test',
+      config: '{"outbounds":[{}]}',
+      requireTun: true,
+    );
+
+    expect(fakePlatform.startCalled, isTrue);
+    expect(fakePlatform.lastRequireTun, isTrue);
   });
 
   test('start throws on invalid JSON', () async {

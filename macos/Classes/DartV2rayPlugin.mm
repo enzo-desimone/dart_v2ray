@@ -24,6 +24,17 @@ static bool ExtractBool(NSDictionary* args, NSString* key, bool default_value) {
   return default_value;
 }
 
+static std::optional<bool> ExtractOptionalBool(NSDictionary* args, NSString* key) {
+  if (![args isKindOfClass:[NSDictionary class]]) {
+    return std::nullopt;
+  }
+  id value = args[key];
+  if ([value isKindOfClass:[NSNumber class]]) {
+    return std::optional<bool>([(NSNumber*)value boolValue]);
+  }
+  return std::nullopt;
+}
+
 static std::vector<std::string> ExtractStringList(NSDictionary* args, NSString* key) {
   std::vector<std::string> values;
   if (![args isKindOfClass:[NSDictionary class]]) {
@@ -181,11 +192,24 @@ static NSDictionary* ConvertStringMapToNSDictionary(
     }
 
     DesktopV2rayCore::StartOptions options;
-    options.proxy_only = ExtractBool(args, @"proxy_only", false);
     options.auto_disconnect_seconds = ExtractAutoDisconnectDuration(args);
     options.bypass_subnets = ExtractStringList(args, @"bypass_subnets");
     options.dns_servers = ExtractStringList(args, @"dns_servers");
-    options.require_tun = ExtractBool(args, @"windows_require_tun", false);
+    const std::optional<bool> require_tun = ExtractOptionalBool(args, @"require_tun");
+    const std::optional<bool> legacy_require_tun = ExtractOptionalBool(args, @"windows_require_tun");
+    const std::optional<bool> proxy_only = ExtractOptionalBool(args, @"proxy_only");
+
+    bool effective_require_tun = false;
+    if (require_tun.has_value()) {
+      effective_require_tun = *require_tun;
+    } else if (legacy_require_tun.has_value()) {
+      effective_require_tun = *legacy_require_tun;
+    } else if (proxy_only.has_value()) {
+      effective_require_tun = !(*proxy_only);
+    }
+
+    options.require_tun = effective_require_tun;
+    options.proxy_only = !effective_require_tun;
 
     const char* config_utf8 = [(NSString*)config_value UTF8String];
     const std::string start_error = _core->Start(config_utf8 != nullptr ? config_utf8 : "", options);

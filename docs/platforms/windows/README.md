@@ -22,12 +22,12 @@ Start call:
 await v2ray.start(
   remark: 'Windows profile',
   config: configJson,
-  windowsRequireTun: false,
+  requireTun: true,
 );
 ```
 
-- `windowsRequireTun: true` forces TUN mode.
-- `windowsRequireTun: false` allows proxy-mode operation without Wintun.
+- `requireTun: true` forces TUN mode.
+- `requireTun: false` keeps proxy-only operation (no Wintun required).
 
 ## Logging and Diagnostics
 

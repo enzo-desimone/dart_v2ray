@@ -86,6 +86,14 @@ bool ExtractBool(const flutter::EncodableMap& args, const char* key, bool fallba
   return fallback;
 }
 
+std::optional<bool> ExtractOptionalBool(const flutter::EncodableMap& args, const char* key) {
+  const auto it = args.find(flutter::EncodableValue(key));
+  if (it != args.end() && std::holds_alternative<bool>(it->second)) {
+    return std::optional<bool>(std::get<bool>(it->second));
+  }
+  return std::nullopt;
+}
+
 int ExtractInt(const flutter::EncodableMap& args, const char* key, int fallback) {
   const auto it = args.find(flutter::EncodableValue(key));
   if (it != args.end() && std::holds_alternative<int32_t>(it->second)) {
@@ -243,11 +251,25 @@ void DartV2rayPlugin::HandleMethodCall(
     }
 
     DesktopV2rayCore::StartOptions options;
-    options.proxy_only = ExtractBool(*args, "proxy_only", false);
     options.auto_disconnect_seconds = ExtractAutoDisconnectDuration(*args);
     options.bypass_subnets = ExtractStringList(*args, "bypass_subnets");
     options.dns_servers = ExtractStringList(*args, "dns_servers");
-    options.require_tun = ExtractBool(*args, "windows_require_tun", false);
+    const std::optional<bool> require_tun = ExtractOptionalBool(*args, "require_tun");
+    const std::optional<bool> legacy_require_tun =
+        ExtractOptionalBool(*args, "windows_require_tun");
+    const std::optional<bool> proxy_only = ExtractOptionalBool(*args, "proxy_only");
+
+    bool effective_require_tun = false;
+    if (require_tun.has_value()) {
+      effective_require_tun = *require_tun;
+    } else if (legacy_require_tun.has_value()) {
+      effective_require_tun = *legacy_require_tun;
+    } else if (proxy_only.has_value()) {
+      effective_require_tun = !(*proxy_only);
+    }
+
+    options.require_tun = effective_require_tun;
+    options.proxy_only = !effective_require_tun;
 
     const std::string error = core_.Start(std::get<std::string>(config_it->second), options);
     if (!error.empty()) {
@@ -467,4 +489,3 @@ std::optional<LRESULT> DartV2rayPlugin::HandleTopLevelWindowProc(
 }
 
 }  // namespace dart_v2ray
-

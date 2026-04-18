@@ -34,14 +34,14 @@ await v2ray.initialize();
 await v2ray.start(
   remark: 'macOS profile',
   config: configJson,
-  proxyOnly: true,
-  windowsRequireTun: false,
+  requireTun: false,
 );
 ```
 
-`proxyOnly: true` is the recommended default rollout for macOS desktop builds.
+`requireTun: false` is the recommended default rollout for macOS desktop
+builds (proxy-only mode).
 
-To force full-tunnel routing on macOS, set `windowsRequireTun: true`.
+To force full-tunnel routing on macOS, set `requireTun: true`.
 When enabled, the desktop core injects TUN inbound/routing config and fails
 fast if a TUN config cannot be constructed from the provided JSON.
 

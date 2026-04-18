@@ -42,8 +42,9 @@ abstract class DartV2rayPlatform extends PlatformInterface {
 
   /// Starts a connection from an Xray JSON config.
   ///
-  /// [windowsRequireTun] is honored by desktop implementations that support
-  /// forced TUN mode (Windows and macOS).
+  /// [requireTun] controls routing mode:
+  /// - `true`: require full-device/system TUN routing.
+  /// - `false`: run proxy-only mode.
   Future<void> start({
     required String remark,
     required String config,
@@ -51,10 +52,9 @@ abstract class DartV2rayPlatform extends PlatformInterface {
     List<String>? blockedApps,
     List<String>? bypassSubnets,
     List<String>? dnsServers,
-    bool proxyOnly = false,
+    bool requireTun = false,
     bool showNotificationDisconnectButton = true,
     AutoDisconnectConfig? autoDisconnect,
-    bool windowsRequireTun = false,
   }) {
     throw UnimplementedError('start() has not been implemented.');
   }

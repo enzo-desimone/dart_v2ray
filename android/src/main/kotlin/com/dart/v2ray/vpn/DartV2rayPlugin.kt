@@ -123,7 +123,11 @@ class DartV2rayPlugin : FlutterPlugin, ActivityAware, PluginRegistry.ActivityRes
         }
 
         val config = call.argument<String>("config")
-        val proxyOnly = call.argument<Boolean>("proxy_only") ?: false
+        val requireTun = call.argument<Boolean>("require_tun")
+        val legacyRequireTun = call.argument<Boolean>("windows_require_tun")
+        val legacyProxyOnly = call.argument<Boolean>("proxy_only")
+        val effectiveRequireTun = requireTun ?: legacyRequireTun ?: legacyProxyOnly?.not() ?: false
+        val proxyOnly = !effectiveRequireTun
         val showDisconnectButton = call.argument<Boolean>("showNotificationDisconnectButton") ?: true
 
         if (config == null) {
@@ -540,5 +544,4 @@ class DartV2rayPlugin : FlutterPlugin, ActivityAware, PluginRegistry.ActivityRes
         private const val XRAY_EXECUTABLE_NAME = "libxray.so"
     }
 }
-
 

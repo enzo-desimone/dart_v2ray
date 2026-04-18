@@ -46,13 +46,13 @@ Future<void> connect(String configJson) async {
   await v2ray.start(
     remark: 'My profile',
     config: configJson,
-    proxyOnly: false,
-    windowsRequireTun: false,
+    requireTun: true,
   );
 }
 ```
 
-`windowsRequireTun: true` forces TUN mode on Windows and macOS desktop flows.
+`requireTun: true` requires full-device/system TUN mode.
+`requireTun: false` runs proxy-only mode.
 
 ## Core API
 

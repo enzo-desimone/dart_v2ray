@@ -56,8 +56,7 @@ class _DartV2rayHomePageState extends State<DartV2rayHomePage> {
   StreamSubscription<ConnectionStatus>? _statusSubscription;
   ConnectionStatus _status = const ConnectionStatus();
 
-  bool _proxyOnly = false;
-  bool _windowsRequireTun = false;
+  bool _requireTun = false;
   bool _initialized = false;
   bool _isInitializing = false;
   bool _isRequestingPermission = false;
@@ -150,13 +149,10 @@ class _DartV2rayHomePageState extends State<DartV2rayHomePage> {
       !_isShowingLogs && !_isInitializing && !_isStarting && !_isStopping;
 
   String get _modeSummary {
-    if (_proxyOnly) {
-      return 'Proxy only';
-    }
-    if (_windowsRequireTun) {
+    if (_requireTun) {
       return 'Desktop TUN required';
     }
-    return 'Auto VPN / TUN';
+    return 'Proxy only';
   }
 
   String get _statusHeadline {
@@ -360,8 +356,7 @@ class _DartV2rayHomePageState extends State<DartV2rayHomePage> {
       await _v2ray.start(
         remark: _remarkController.text.trim(),
         config: _configController.text,
-        proxyOnly: _proxyOnly,
-        windowsRequireTun: _windowsRequireTun,
+        requireTun: _requireTun,
       );
       _showMessage('Connection started');
     } catch (error) {
@@ -890,25 +885,13 @@ class _DartV2rayHomePageState extends State<DartV2rayHomePage> {
                     const SizedBox(height: 12),
                     SwitchListTile(
                       contentPadding: EdgeInsets.zero,
-                      value: _proxyOnly,
+                      value: _requireTun,
                       onChanged: _canEditConfiguration
-                          ? (value) => setState(() => _proxyOnly = value)
+                          ? (value) => setState(() => _requireTun = value)
                           : null,
-                      title: const Text('Proxy only mode'),
+                      title: const Text('Require TUN mode'),
                       subtitle: const Text(
-                        'Use a local proxy without creating a system-wide VPN.',
-                      ),
-                    ),
-                    SwitchListTile(
-                      contentPadding: EdgeInsets.zero,
-                      value: _windowsRequireTun,
-                      onChanged: _canEditConfiguration
-                          ? (value) =>
-                                setState(() => _windowsRequireTun = value)
-                          : null,
-                      title: const Text('Desktop: force TUN mode'),
-                      subtitle: const Text(
-                        'Fail fast if Windows/macOS cannot start the TUN session.',
+                        'On: full-device TUN. Off: proxy-only mode.',
                       ),
                     ),
                   ],

@@ -30,7 +30,7 @@ if (!granted) return;
 await v2ray.start(
   remark: 'Android profile',
   config: configJson,
-  proxyOnly: false,
+  requireTun: true,
   notificationDisconnectButtonName: 'DISCONNECT',
   showNotificationDisconnectButton: true,
 );
@@ -41,7 +41,7 @@ await v2ray.start(
 - `blockedApps`: package names to block in VPN mode.
 - `bypassSubnets`: subnets excluded from tunnel.
 - `dnsServers`: custom DNS resolver list.
-- `proxyOnly`: local proxy mode without full-device VPN routes.
+- `requireTun`: `true` for full-device VPN/TUN, `false` for proxy-only mode.
 
 ## ABI Note
 

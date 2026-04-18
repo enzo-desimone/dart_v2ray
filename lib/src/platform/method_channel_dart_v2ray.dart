@@ -41,10 +41,9 @@ class MethodChannelDartV2ray extends DartV2rayPlatform {
     List<String>? blockedApps,
     List<String>? bypassSubnets,
     List<String>? dnsServers,
-    bool proxyOnly = false,
+    bool requireTun = false,
     bool showNotificationDisconnectButton = true,
     AutoDisconnectConfig? autoDisconnect,
-    bool windowsRequireTun = false,
   }) async {
     await methodChannel.invokeMethod<void>('startVless', <String, dynamic>{
       'remark': remark,
@@ -52,11 +51,10 @@ class MethodChannelDartV2ray extends DartV2rayPlatform {
       'blocked_apps': blockedApps,
       'bypass_subnets': bypassSubnets,
       'dns_servers': dnsServers,
-      'proxy_only': proxyOnly,
+      'require_tun': requireTun,
       'notificationDisconnectButtonName': notificationDisconnectButtonName,
       'showNotificationDisconnectButton': showNotificationDisconnectButton,
       'auto_disconnect': autoDisconnect?.toMap(),
-      'windows_require_tun': windowsRequireTun,
     });
   }
 

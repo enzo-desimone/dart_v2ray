@@ -1246,57 +1246,39 @@ std::string DesktopV2rayCore::BuildEffectiveConfig(const std::string& base_confi
   *mode_note = "proxy";
 
 #if defined(_WIN32)
-  if (options.proxy_only) {
+  if (options.proxy_only || !options.require_tun) {
     return base_config;
   }
 
   if (!IsElevated()) {
     *mode_note = "proxy_fallback_not_elevated";
-    if (options.require_tun) {
-      return "";
-    }
-    return base_config;
+    return "";
   }
 
   if (runtime_paths_.wintun_dll.empty()) {
     *mode_note = "proxy_fallback_missing_wintun";
-    if (options.require_tun) {
-      return "";
-    }
-    return base_config;
+    return "";
   }
 
   std::string tuned = base_config;
   if (!InsertTunInbound(&tuned, options.dns_servers)) {
     *mode_note = "proxy_fallback_invalid_config";
-    if (options.require_tun) {
-      return "";
-    }
-    return base_config;
+    return "";
   }
 
   if (!InjectDnsServers(&tuned, options.dns_servers)) {
     *mode_note = "proxy_fallback_invalid_dns";
-    if (options.require_tun) {
-      return "";
-    }
-    return base_config;
+    return "";
   }
 
   if (FindPreferredOutboundTag(tuned).empty()) {
     *mode_note = "proxy_fallback_missing_outbound_tag";
-    if (options.require_tun) {
-      return "";
-    }
-    return base_config;
+    return "";
   }
 
   if (!InjectTunRouting(&tuned)) {
     *mode_note = "proxy_fallback_invalid_routing";
-    if (options.require_tun) {
-      return "";
-    }
-    return base_config;
+    return "";
   }
 
   *use_tun = true;
@@ -1343,23 +1325,33 @@ std::string DesktopV2rayCore::BuildEffectiveConfig(const std::string& base_confi
 }
 
 std::string DesktopV2rayCore::Start(const std::string& config, const StartOptions& options) {
+  StartOptions effective_options = options;
+  // Binary mode contract:
+  // - require_tun=true  -> TUN required
+  // - require_tun=false -> proxy-only
+  if (effective_options.require_tun) {
+    effective_options.proxy_only = false;
+  } else {
+    effective_options.proxy_only = true;
+  }
+
 #if defined(_WIN32)
   LogLine("Start requested: config_bytes=" + std::to_string(config.size()) +
-          " proxy_only=" + BoolToString(options.proxy_only) +
-          " require_tun=" + BoolToString(options.require_tun) +
-          " bypass_subnets=" + std::to_string(options.bypass_subnets.size()) +
-          " dns_servers=" + std::to_string(options.dns_servers.size()) +
+          " proxy_only=" + BoolToString(effective_options.proxy_only) +
+          " require_tun=" + BoolToString(effective_options.require_tun) +
+          " bypass_subnets=" + std::to_string(effective_options.bypass_subnets.size()) +
+          " dns_servers=" + std::to_string(effective_options.dns_servers.size()) +
           " auto_disconnect_seconds=" +
-          (options.auto_disconnect_seconds.has_value()
-               ? std::to_string(*options.auto_disconnect_seconds)
+          (effective_options.auto_disconnect_seconds.has_value()
+               ? std::to_string(*effective_options.auto_disconnect_seconds)
                : "none"));
 #endif
   Stop();
 
   runtime_paths_ = DiscoverRuntimePaths();
 
-  const bool tun_requested = !options.proxy_only;
-  const std::string runtime_error = ValidateRuntime(runtime_paths_, tun_requested && options.require_tun);
+  const bool tun_requested = effective_options.require_tun;
+  const std::string runtime_error = ValidateRuntime(runtime_paths_, tun_requested);
   if (!runtime_error.empty()) {
 #if defined(_WIN32)
     LogLine("Start aborted due to runtime validation error: " + runtime_error);
@@ -1391,14 +1383,15 @@ std::string DesktopV2rayCore::Start(const std::string& config, const StartOption
 
   bool use_tun = false;
   std::string mode_note;
-  const std::string effective_config = BuildEffectiveConfig(config, options, &use_tun, &mode_note);
+  const std::string effective_config =
+      BuildEffectiveConfig(config, effective_options, &use_tun, &mode_note);
 
   if (effective_config.empty()) {
     if (mode_note == "proxy_fallback_not_elevated") {
 #if defined(_WIN32)
       LogLine("Start failed: Windows TUN mode requested without elevation.");
 #endif
-      return "Windows TUN mode requires administrator privileges. Restart app as Administrator or set proxyOnly=true.";
+      return "Windows TUN mode requires administrator privileges. Restart app as Administrator or set requireTun=false.";
     }
     if (mode_note == "proxy_fallback_missing_wintun") {
 #if defined(_WIN32)
@@ -1416,7 +1409,7 @@ std::string DesktopV2rayCore::Start(const std::string& config, const StartOption
 #if defined(_WIN32)
     LogLine("Start failed: unable to construct TUN config. mode_note=" + mode_note);
 #endif
-    return "Failed to construct TUN config from provided JSON. Set proxyOnly=true or provide a standard Xray config root object.";
+    return "Failed to construct TUN config from provided JSON. Set requireTun=false or provide a standard Xray config root object.";
   }
 
   if (!WriteConfig(effective_config)) {
@@ -1528,15 +1521,9 @@ std::string DesktopV2rayCore::Start(const std::string& config, const StartOption
 #if defined(_WIN32)
   if (use_tun) {
     std::string network_error;
-    if (!ApplyTunNetworking(options, effective_config, &network_error)) {
+    if (!ApplyTunNetworking(effective_options, effective_config, &network_error)) {
       Stop();
-      if (options.require_tun) {
-        return network_error;
-      }
-      LogLine("TUN networking failed; switching to proxy fallback: " + network_error);
-      StartOptions fallback = options;
-      fallback.proxy_only = true;
-      return Start(config, fallback);
+      return network_error;
     }
   }
 #endif
@@ -1573,8 +1560,10 @@ std::string DesktopV2rayCore::Start(const std::string& config, const StartOption
     accumulated_upstream_download_bytes_ = 0;
     last_upstream_traffic_sample_at_ = std::chrono::steady_clock::time_point{};
 
-    if (options.auto_disconnect_seconds.has_value() && options.auto_disconnect_seconds.value() > 0) {
-      auto_disconnect_deadline_ = connected_at_ + std::chrono::seconds(*options.auto_disconnect_seconds);
+    if (effective_options.auto_disconnect_seconds.has_value() &&
+        effective_options.auto_disconnect_seconds.value() > 0) {
+      auto_disconnect_deadline_ =
+          connected_at_ + std::chrono::seconds(*effective_options.auto_disconnect_seconds);
       should_start_auto_disconnect_timer = true;
     } else {
       auto_disconnect_deadline_.reset();

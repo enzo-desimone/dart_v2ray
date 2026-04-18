@@ -49,20 +49,19 @@ class DartV2ray {
 
   /// Starts a connection with a full Xray JSON configuration.
   ///
-  /// Set [proxyOnly] to `true` to run local proxy mode without system-wide VPN.
-  /// Set [windowsRequireTun] to `true` to force TUN mode on supported desktop
-  /// targets (Windows and macOS).
+  /// Set [requireTun] to control connection mode:
+  /// - `true`: require full-device/system TUN routing.
+  /// - `false`: run proxy-only mode.
   Future<void> start({
     required String remark,
     required String config,
     List<String>? blockedApps,
     List<String>? bypassSubnets,
     List<String>? dnsServers,
-    bool proxyOnly = false,
+    bool requireTun = false,
     String notificationDisconnectButtonName = 'DISCONNECT',
     bool showNotificationDisconnectButton = true,
     AutoDisconnectConfig? autoDisconnect,
-    bool windowsRequireTun = false,
   }) async {
     validateXrayConfig(config);
     await DartV2rayPlatform.instance.start(
@@ -71,11 +70,10 @@ class DartV2ray {
       blockedApps: blockedApps,
       bypassSubnets: bypassSubnets,
       dnsServers: dnsServers,
-      proxyOnly: proxyOnly,
+      requireTun: requireTun,
       notificationDisconnectButtonName: notificationDisconnectButtonName,
       showNotificationDisconnectButton: showNotificationDisconnectButton,
       autoDisconnect: autoDisconnect,
-      windowsRequireTun: windowsRequireTun,
     );
   }
 
