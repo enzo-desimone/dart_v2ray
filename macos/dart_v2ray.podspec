@@ -17,6 +17,8 @@ auto-disconnect support.
   s.resource_bundles = {
     'dart_v2ray_privacy' => ['Resources/PrivacyInfo.xcprivacy']
   }
+  bundled_xray_files = Dir.glob('bin/xray*').select { |path| File.file?(path) }
+  s.resources = bundled_xray_files unless bundled_xray_files.empty?
   s.static_framework = true
   s.dependency 'FlutterMacOS'
   s.platform = :osx, '10.14'

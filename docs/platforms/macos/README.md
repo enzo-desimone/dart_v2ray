@@ -12,9 +12,18 @@ This guide covers macOS-specific setup for `dart_v2ray`.
 
 - Flutter desktop app with macOS enabled.
 - Runtime access to the Xray executable.
+  Put your binary in `macos/bin/xray` inside this plugin package: CocoaPods
+  bundles `macos/bin/xray*` into app resources automatically.
   The native core resolves it in this order:
   1. `XRAY_EXECUTABLE` env var
-  2. `xray` from `PATH`
+  2. Bundled candidates near the app/runtime:
+     - `<runtime>/xray`
+     - `<runtime>/bin/xray`
+     - `<runtime>/macos/bin/xray`
+     - `<App>.app/Contents/Resources/xray`
+     - `<App>.app/Contents/Resources/bin/xray`
+     - `<App>.app/Contents/Resources/macos/bin/xray`
+  3. `xray` from `PATH`
 
 ## Usage
 
@@ -40,8 +49,10 @@ await v2ray.start(
 
 ## Troubleshooting
 
-- `initialize` / `start` fails: verify Xray is reachable (`which xray`) or set
-  `XRAY_EXECUTABLE=/absolute/path/to/xray`.
+- `initialize` / `start` fails:
+  - Ensure the binary exists and is executable (`chmod +x macos/bin/xray`).
+  - Verify discovery from terminal (`which xray`) or set
+    `XRAY_EXECUTABLE=/absolute/path/to/xray`.
 - No traffic observed: check `onStatusChanged` fields (`state`,
   `connectionPhase`, `isProcessRunning`) and confirm config validity.
 

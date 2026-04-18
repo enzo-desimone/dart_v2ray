@@ -29,6 +29,9 @@
 #include <csignal>
 #include <cstdio>
 #include <filesystem>
+#if defined(__APPLE__)
+#include <mach-o/dyld.h>
+#endif
 #include <netdb.h>
 #include <sys/socket.h>
 #include <unistd.h>
@@ -844,9 +847,83 @@ DesktopV2rayCore::RuntimePaths DesktopV2rayCore::DiscoverRuntimePaths() const {
   const char* env_xray = std::getenv("XRAY_EXECUTABLE");
   if (env_xray != nullptr && std::string(env_xray).size() > 0) {
     paths.xray_executable = std::string(env_xray);
-  } else {
-    paths.xray_executable = "xray";
+    return paths;
   }
+
+  // Keep Linux behavior unchanged: rely on env var or PATH.
+#if defined(__APPLE__)
+  auto file_exists = [](const std::filesystem::path& path) -> bool {
+    if (path.empty()) {
+      return false;
+    }
+    std::error_code ec;
+    if (!std::filesystem::exists(path, ec) ||
+        !std::filesystem::is_regular_file(path, ec)) {
+      return false;
+    }
+    const std::string native_path = path.string();
+    return access(native_path.c_str(), X_OK) == 0;
+  };
+
+  std::vector<std::filesystem::path> search_roots;
+
+  uint32_t executable_path_size = 0;
+  _NSGetExecutablePath(nullptr, &executable_path_size);
+  if (executable_path_size > 0) {
+    std::string executable_path_buffer(executable_path_size, '\0');
+    if (_NSGetExecutablePath(executable_path_buffer.data(), &executable_path_size) == 0) {
+      std::error_code ec;
+      std::filesystem::path executable_path(executable_path_buffer.c_str());
+      std::filesystem::path executable_dir =
+          std::filesystem::weakly_canonical(executable_path, ec).parent_path();
+      if (executable_dir.empty()) {
+        executable_dir = executable_path.parent_path();
+      }
+      if (!executable_dir.empty()) {
+        search_roots.push_back(executable_dir);
+        // macOS app bundle Resources directory.
+        search_roots.push_back(executable_dir / ".." / "Resources");
+      }
+    }
+  }
+
+  std::error_code cwd_error;
+  const std::filesystem::path current_directory = std::filesystem::current_path(cwd_error);
+  if (!cwd_error && !current_directory.empty()) {
+    search_roots.push_back(current_directory);
+  }
+
+  std::vector<std::filesystem::path> expanded_roots = search_roots;
+  for (const auto& root : search_roots) {
+    std::filesystem::path cursor = root;
+    for (int i = 0; i < 8; ++i) {
+      cursor = cursor.parent_path();
+      if (cursor.empty()) {
+        break;
+      }
+      expanded_roots.push_back(cursor);
+    }
+  }
+
+  for (const auto& root : expanded_roots) {
+    const std::vector<std::filesystem::path> candidates = {
+        root / "xray",
+        root / "bin" / "xray",
+        root / "macos" / "bin" / "xray",
+    };
+    for (const auto& candidate : candidates) {
+      if (file_exists(candidate)) {
+        paths.xray_executable = candidate.string();
+        return paths;
+      }
+    }
+  }
+
+  // Final fallback: rely on shell PATH.
+  paths.xray_executable = "xray";
+#else
+  paths.xray_executable = "xray";
+#endif
 #endif
   return paths;
 }
