@@ -24,6 +24,12 @@ This guide covers macOS-specific setup for `dart_v2ray`.
      - `<App>.app/Contents/Resources/bin/xray`
      - `<App>.app/Contents/Resources/macos/bin/xray`
   3. `xray` from `PATH`
+- For `requireTun: true`:
+  1. Add a Packet Tunnel Network Extension target to the macOS app.
+  2. Configure a shared App Group for app + extension.
+  3. Ensure extension bundle id is `<providerBundleIdentifier>.XrayTunnel`.
+  4. Pass matching `providerBundleIdentifier` and `groupIdentifier` to
+     `initialize(...)`.
 
 ## Usage
 
@@ -38,21 +44,21 @@ await v2ray.start(
 );
 ```
 
-`requireTun: false` is the recommended default rollout for macOS desktop
-builds (proxy-only mode).
+`requireTun: false` runs proxy-only mode through desktop core.
 
-To force full-tunnel routing on macOS, set `requireTun: true`.
-When enabled, the desktop core injects TUN inbound/routing config and fails
-fast if a TUN config cannot be constructed from the provided JSON.
+`requireTun: true` uses Packet Tunnel mode (NetworkExtension), aligned with iOS
+flow, and requires the native setup above.
 
 ## Notes
 
-- macOS support is implemented through the shared desktop native core.
+- macOS support uses two paths:
+  - `requireTun: false`: shared desktop native core.
+  - `requireTun: true`: Packet Tunnel (`NETunnelProviderManager`).
 - `onStatusChanged` emits the same payload contract used by desktop targets.
 - Windows-only diagnostics methods remain callable and return
   `{"supported":"false","reason":"windows_only"}` on macOS.
-- Full-tunnel TUN behavior depends on macOS runtime permissions/signing model of
-  your app distribution.
+- Full-tunnel behavior depends on your macOS signing/entitlements distribution
+  setup for Network Extension + App Group.
 
 ## Troubleshooting
 
@@ -60,6 +66,10 @@ fast if a TUN config cannot be constructed from the provided JSON.
   - Ensure the binary exists and is executable (`chmod +x macos/bin/xray`).
   - Verify discovery from terminal (`which xray`) or set
     `XRAY_EXECUTABLE=/absolute/path/to/xray`.
+- `requireTun: true` fails:
+  - Verify Packet Tunnel target exists and is signed.
+  - Verify extension bundle id is `<providerBundleIdentifier>.XrayTunnel`.
+  - Verify App Group string matches exactly across app + extension.
 - No traffic observed: check `onStatusChanged` fields (`state`,
   `connectionPhase`, `isProcessRunning`) and confirm config validity.
 

@@ -21,6 +21,7 @@ auto-disconnect support.
   s.resources = bundled_xray_files unless bundled_xray_files.empty?
   s.static_framework = true
   s.libraries = 'c++'
+  s.frameworks = 'NetworkExtension'
   s.dependency 'FlutterMacOS'
   s.platform = :osx, '10.14'
 

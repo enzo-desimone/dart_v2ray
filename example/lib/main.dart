@@ -891,7 +891,7 @@ class _DartV2rayHomePageState extends State<DartV2rayHomePage> {
                           : null,
                       title: const Text('Require TUN mode'),
                       subtitle: const Text(
-                        'On: full-device TUN. Off: proxy-only mode.',
+                        'On: full-device TUN with native Packet Tunnel setup. Off: proxy-only mode.',
                       ),
                     ),
                   ],
