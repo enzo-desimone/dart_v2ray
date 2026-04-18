@@ -126,10 +126,6 @@ class _DartV2rayHomePageState extends State<DartV2rayHomePage> {
 
   bool get _isConnectedEffective => _isConnected || _isConnectedByPhase;
 
-  bool get _isDisconnectedLike =>
-      _normalizedState == 'DISCONNECTED' ||
-          _normalizedState == 'AUTO_DISCONNECTED';
-
   bool get _hasLiveSession =>
       _isConnecting || _isConnectedEffective || _status.isProcessRunning;
 
@@ -141,14 +137,11 @@ class _DartV2rayHomePageState extends State<DartV2rayHomePage> {
 
   bool get _canRequestPermission =>
       !_isRequestingPermission &&
-          !_isInitializing &&
-          !_isStarting &&
-          !_isStopping;
+      !_isInitializing &&
+      !_isStarting &&
+      !_isStopping;
 
-  bool get _canDisconnect =>
-      _initialized &&
-          !_isInitializing &&
-          !_isStopping;
+  bool get _canDisconnect => _initialized && !_isInitializing && !_isStopping;
 
   bool get _canResetLogs =>
       !_isResettingLogs && !_isInitializing && !_isStarting && !_isStopping;
@@ -493,9 +486,8 @@ class _DartV2rayHomePageState extends State<DartV2rayHomePage> {
             content: SingleChildScrollView(child: Text(lines)),
             actions: [
               TextButton(
-                onPressed: () async {
-                  await Clipboard.setData(ClipboardData(text: lines));
-                  if (!mounted) return;
+                onPressed: () {
+                  Clipboard.setData(ClipboardData(text: lines));
                   Navigator.of(dialogContext).pop();
                   _showMessage('Windows debug logs copied');
                 },
@@ -535,8 +527,9 @@ class _DartV2rayHomePageState extends State<DartV2rayHomePage> {
       final String parsedRemark = parsed.remark.trim();
 
       setState(() {
-        _remarkController.text =
-        parsedRemark.isEmpty ? fallbackRemark : parsedRemark;
+        _remarkController.text = parsedRemark.isEmpty
+            ? fallbackRemark
+            : parsedRemark;
         _configController.text = parsed.getFullConfiguration();
       });
 
@@ -598,14 +591,11 @@ class _DartV2rayHomePageState extends State<DartV2rayHomePage> {
 
   String _formatDuration(int seconds) {
     final Duration duration = Duration(seconds: seconds);
-     String twoDigits(int value) => value.toString().padLeft(2, '0');
+    String twoDigits(int value) => value.toString().padLeft(2, '0');
     if (duration.inHours > 0) {
-      return '${twoDigits(duration.inHours)}:${twoDigits(
-          duration.inMinutes.remainder(60))}:${twoDigits(
-          duration.inSeconds.remainder(60))}';
+      return '${twoDigits(duration.inHours)}:${twoDigits(duration.inMinutes.remainder(60))}:${twoDigits(duration.inSeconds.remainder(60))}';
     }
-    return '${twoDigits(duration.inMinutes)}:${twoDigits(
-        duration.inSeconds.remainder(60))}';
+    return '${twoDigits(duration.inMinutes)}:${twoDigits(duration.inSeconds.remainder(60))}';
   }
 
   String _humanizeState(String rawState) {
@@ -613,7 +603,11 @@ class _DartV2rayHomePageState extends State<DartV2rayHomePage> {
         .replaceAll('-', '_')
         .toLowerCase()
         .split('_')
-        .map((part) => part.isEmpty ? part : '${part[0].toUpperCase()}${part.substring(1)}')
+        .map(
+          (part) => part.isEmpty
+              ? part
+              : '${part[0].toUpperCase()}${part.substring(1)}',
+        )
         .join(' ');
   }
 
@@ -683,17 +677,18 @@ class _DartV2rayHomePageState extends State<DartV2rayHomePage> {
               modeSummary: _modeSummary,
               transportModeLabel: _humanizeState(_status.transportMode),
               trafficSourceLabel: _trafficSourceLabel,
-              processStateLabel:
-                  _status.isProcessRunning ? 'Running' : 'Not running',
+              processStateLabel: _status.isProcessRunning
+                  ? 'Running'
+                  : 'Not running',
               durationLabel: _formatDuration(_status.durationSeconds),
               uploadLabel: _formatBytes(_status.uploadBytesTotal),
               downloadLabel: _formatBytes(_status.downloadBytesTotal),
               uploadSpeedLabel:
-              '${_formatBytes(_status.uploadSpeedBytesPerSecond)}/s',
+                  '${_formatBytes(_status.uploadSpeedBytesPerSecond)}/s',
               downloadSpeedLabel:
-              '${_formatBytes(_status.downloadSpeedBytesPerSecond)}/s',
+                  '${_formatBytes(_status.downloadSpeedBytesPerSecond)}/s',
               remainingAutoDisconnectSeconds:
-              _status.remainingAutoDisconnectSeconds,
+                  _status.remainingAutoDisconnectSeconds,
             ),
             const SizedBox(height: 16),
             Card(
@@ -704,18 +699,12 @@ class _DartV2rayHomePageState extends State<DartV2rayHomePage> {
                   children: [
                     Text(
                       'Session Controls',
-                      style: Theme
-                          .of(context)
-                          .textTheme
-                          .titleLarge,
+                      style: Theme.of(context).textTheme.titleLarge,
                     ),
                     const SizedBox(height: 6),
                     Text(
                       _primaryActionHint,
-                      style: Theme
-                          .of(context)
-                          .textTheme
-                          .bodyMedium,
+                      style: Theme.of(context).textTheme.bodyMedium,
                     ),
                     const SizedBox(height: 16),
                     Wrap(
@@ -728,13 +717,15 @@ class _DartV2rayHomePageState extends State<DartV2rayHomePage> {
                             (_isStarting || _isConnecting)
                                 ? Icons.hourglass_bottom_rounded
                                 : (_isConnectedEffective
-                                ? Icons.check_circle_rounded
-                                : Icons.play_arrow_rounded),
+                                      ? Icons.check_circle_rounded
+                                      : Icons.play_arrow_rounded),
                           ),
                           label: Text(
                             (_isStarting || _isConnecting)
                                 ? 'Connecting...'
-                                : (_isConnectedEffective ? 'Connected' : 'Connect'),
+                                : (_isConnectedEffective
+                                      ? 'Connected'
+                                      : 'Connect'),
                           ),
                         ),
                         FilledButton.tonalIcon(
@@ -754,20 +745,21 @@ class _DartV2rayHomePageState extends State<DartV2rayHomePage> {
                             _initialized
                                 ? Icons.check_circle_rounded
                                 : (_isInitializing
-                                ? Icons.hourglass_bottom_rounded
-                                : Icons.power_settings_new_rounded),
+                                      ? Icons.hourglass_bottom_rounded
+                                      : Icons.power_settings_new_rounded),
                           ),
                           label: Text(
                             _initialized
                                 ? 'Initialized'
                                 : (_isInitializing
-                                ? 'Initializing...'
-                                : 'Initialize'),
+                                      ? 'Initializing...'
+                                      : 'Initialize'),
                           ),
                         ),
                         OutlinedButton.icon(
-                          onPressed:
-                          _canRequestPermission ? _requestPermission : null,
+                          onPressed: _canRequestPermission
+                              ? _requestPermission
+                              : null,
                           icon: Icon(
                             _isRequestingPermission
                                 ? Icons.hourglass_bottom_rounded
@@ -805,20 +797,14 @@ class _DartV2rayHomePageState extends State<DartV2rayHomePage> {
                   children: [
                     Text(
                       'Share Link',
-                      style: Theme
-                          .of(context)
-                          .textTheme
-                          .titleLarge,
+                      style: Theme.of(context).textTheme.titleLarge,
                     ),
                     const SizedBox(height: 6),
                     Text(
                       _canEditConfiguration
                           ? 'Importing rewrites the JSON config below from the share link.'
                           : 'Configuration edits are disabled while the session is active.',
-                      style: Theme
-                          .of(context)
-                          .textTheme
-                          .bodyMedium,
+                      style: Theme.of(context).textTheme.bodyMedium,
                     ),
                     const SizedBox(height: 16),
                     TextField(
@@ -830,7 +816,7 @@ class _DartV2rayHomePageState extends State<DartV2rayHomePage> {
                       decoration: const InputDecoration(
                         labelText: 'Share link',
                         helperText:
-                        'Supported schemes: vless, vmess, trojan, ss, socks.',
+                            'Supported schemes: vless, vmess, trojan, ss, socks.',
                         border: OutlineInputBorder(),
                         alignLabelWithHint: true,
                       ).copyWith(errorText: shareLinkValidationError),
@@ -842,8 +828,8 @@ class _DartV2rayHomePageState extends State<DartV2rayHomePage> {
                       children: [
                         OutlinedButton.icon(
                           onPressed:
-                          _canEditConfiguration &&
-                              shareLinkValidationError == null
+                              _canEditConfiguration &&
+                                  shareLinkValidationError == null
                               ? _applyShareLink
                               : null,
                           icon: const Icon(Icons.file_download_done_rounded),
@@ -871,18 +857,12 @@ class _DartV2rayHomePageState extends State<DartV2rayHomePage> {
                   children: [
                     Text(
                       'Configuration',
-                      style: Theme
-                          .of(context)
-                          .textTheme
-                          .titleLarge,
+                      style: Theme.of(context).textTheme.titleLarge,
                     ),
                     const SizedBox(height: 6),
                     Text(
                       'Remark and JSON config are what the session uses when Connect is pressed.',
-                      style: Theme
-                          .of(context)
-                          .textTheme
-                          .bodyMedium,
+                      style: Theme.of(context).textTheme.bodyMedium,
                     ),
                     const SizedBox(height: 16),
                     TextField(
@@ -924,7 +904,7 @@ class _DartV2rayHomePageState extends State<DartV2rayHomePage> {
                       value: _windowsRequireTun,
                       onChanged: _canEditConfiguration
                           ? (value) =>
-                          setState(() => _windowsRequireTun = value)
+                                setState(() => _windowsRequireTun = value)
                           : null,
                       title: const Text('Windows: force TUN mode'),
                       subtitle: const Text(
@@ -944,18 +924,12 @@ class _DartV2rayHomePageState extends State<DartV2rayHomePage> {
                   children: [
                     Text(
                       'Windows Tools',
-                      style: Theme
-                          .of(context)
-                          .textTheme
-                          .titleLarge,
+                      style: Theme.of(context).textTheme.titleLarge,
                     ),
                     const SizedBox(height: 6),
                     Text(
                       'Use these when you need captured plugin/Xray logs.',
-                      style: Theme
-                          .of(context)
-                          .textTheme
-                          .bodyMedium,
+                      style: Theme.of(context).textTheme.bodyMedium,
                     ),
                     const SizedBox(height: 16),
                     SwitchListTile(
@@ -1124,21 +1098,16 @@ class _StatusOverviewCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final ColorScheme scheme = Theme
-        .of(context)
-        .colorScheme;
+    final ColorScheme scheme = Theme.of(context).colorScheme;
     final Color tone = _tone(scheme);
 
     return AnimatedContainer(
       duration: const Duration(milliseconds: 250),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(28),
-        border: Border.all(color: tone.withOpacity(0.18)),
+        border: Border.all(color: tone.withValues(alpha: 0.18)),
         gradient: LinearGradient(
-          colors: <Color>[
-            tone.withOpacity(0.15),
-            scheme.surface,
-          ],
+          colors: <Color>[tone.withValues(alpha: 0.15), scheme.surface],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
@@ -1155,7 +1124,7 @@ class _StatusOverviewCard extends StatelessWidget {
                   width: 56,
                   height: 56,
                   decoration: BoxDecoration(
-                    color: tone.withOpacity(0.16),
+                    color: tone.withValues(alpha: 0.16),
                     borderRadius: BorderRadius.circular(18),
                   ),
                   child: Icon(_icon(), color: tone),
@@ -1165,25 +1134,16 @@ class _StatusOverviewCard extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      _StatusPill(
-                        label: statusLabel,
-                        tone: tone,
-                      ),
+                      _StatusPill(label: statusLabel, tone: tone),
                       const SizedBox(height: 10),
                       Text(
                         headline,
-                        style: Theme
-                            .of(context)
-                            .textTheme
-                            .headlineSmall,
+                        style: Theme.of(context).textTheme.headlineSmall,
                       ),
                       const SizedBox(height: 6),
                       Text(
                         supportingText,
-                        style: Theme
-                            .of(context)
-                            .textTheme
-                            .bodyMedium,
+                        style: Theme.of(context).textTheme.bodyMedium,
                       ),
                     ],
                   ),
@@ -1194,17 +1154,14 @@ class _StatusOverviewCard extends StatelessWidget {
               const SizedBox(height: 18),
               Text(
                 currentActionLabel!,
-                style: Theme
-                    .of(context)
-                    .textTheme
-                    .labelLarge,
+                style: Theme.of(context).textTheme.labelLarge,
               ),
               const SizedBox(height: 8),
               LinearProgressIndicator(
                 borderRadius: BorderRadius.circular(999),
                 minHeight: 8,
                 color: tone,
-                backgroundColor: tone.withOpacity(0.12),
+                backgroundColor: tone.withValues(alpha: 0.12),
               ),
             ],
             const SizedBox(height: 18),
@@ -1282,16 +1239,14 @@ class _StatusMetricTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final ColorScheme scheme = Theme
-        .of(context)
-        .colorScheme;
+    final ColorScheme scheme = Theme.of(context).colorScheme;
 
     return ConstrainedBox(
       constraints: const BoxConstraints(minWidth: 140, maxWidth: 180),
       child: Container(
         padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
-          color: scheme.surfaceContainerHighest.withOpacity(0.55),
+          color: scheme.surfaceContainerHighest.withValues(alpha: 0.55),
           borderRadius: BorderRadius.circular(18),
         ),
         child: Column(
@@ -1299,21 +1254,9 @@ class _StatusMetricTile extends StatelessWidget {
           children: [
             Icon(icon, size: 18, color: scheme.primary),
             const SizedBox(height: 10),
-            Text(
-              label,
-              style: Theme
-                  .of(context)
-                  .textTheme
-                  .labelMedium,
-            ),
+            Text(label, style: Theme.of(context).textTheme.labelMedium),
             const SizedBox(height: 4),
-            Text(
-              value,
-              style: Theme
-                  .of(context)
-                  .textTheme
-                  .titleMedium,
-            ),
+            Text(value, style: Theme.of(context).textTheme.titleMedium),
           ],
         ),
       ),
@@ -1322,32 +1265,24 @@ class _StatusMetricTile extends StatelessWidget {
 }
 
 class _InfoChip extends StatelessWidget {
-  const _InfoChip({
-    required this.label,
-    required this.value,
-  });
+  const _InfoChip({required this.label, required this.value});
 
   final String label;
   final String value;
 
   @override
   Widget build(BuildContext context) {
-    final ColorScheme scheme = Theme
-        .of(context)
-        .colorScheme;
+    final ColorScheme scheme = Theme.of(context).colorScheme;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
       decoration: BoxDecoration(
-        color: scheme.surface.withOpacity(0.7),
+        color: scheme.surface.withValues(alpha: 0.7),
         borderRadius: BorderRadius.circular(999),
         border: Border.all(color: scheme.outlineVariant),
       ),
       child: RichText(
         text: TextSpan(
-          style: Theme
-              .of(context)
-              .textTheme
-              .labelMedium,
+          style: Theme.of(context).textTheme.labelMedium,
           children: [
             TextSpan(
               text: '$label: ',
@@ -1368,10 +1303,7 @@ class _InfoChip extends StatelessWidget {
 }
 
 class _StatusPill extends StatelessWidget {
-  const _StatusPill({
-    required this.label,
-    required this.tone,
-  });
+  const _StatusPill({required this.label, required this.tone});
 
   final String label;
   final Color tone;
@@ -1381,16 +1313,12 @@ class _StatusPill extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
       decoration: BoxDecoration(
-        color: tone.withOpacity(0.14),
+        color: tone.withValues(alpha: 0.14),
         borderRadius: BorderRadius.circular(999),
       ),
       child: Text(
         label,
-        style: Theme
-            .of(context)
-            .textTheme
-            .labelLarge
-            ?.copyWith(
+        style: Theme.of(context).textTheme.labelLarge?.copyWith(
           color: tone,
           fontWeight: FontWeight.w700,
         ),

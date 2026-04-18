@@ -1,5 +1,17 @@
 ## Unreleased
 
+- Refactored Dart sources into a clearer structure:
+  `lib/src/core`, `lib/src/platform`, and `lib/src/share_links`.
+- Split persistent status and Windows diagnostics logic into dedicated helper
+  files to keep `DartV2ray` focused and easier to maintain.
+- Added backward-compatible export wrappers for legacy import paths
+  (`lib/url/*`, `dart_v2ray_method_channel.dart`,
+  `dart_v2ray_platform_interface.dart`).
+- Revised and expanded English DartDoc comments across public API and share-link
+  parsers.
+- Rewrote the global README and added platform-specific guides under
+  `docs/platforms/*`.
+
 - Expanded `ConnectionStatus` with lifecycle and diagnostics fields:
   `connectionPhase`, `transportMode`, `trafficSource`, `trafficReason`,
   and `isProcessRunning`.

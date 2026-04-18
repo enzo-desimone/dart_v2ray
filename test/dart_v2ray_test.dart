@@ -1,8 +1,6 @@
 import 'dart:convert';
 
 import 'package:dart_v2ray/dart_v2ray.dart';
-import 'package:dart_v2ray/dart_v2ray_method_channel.dart';
-import 'package:dart_v2ray/dart_v2ray_platform_interface.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:plugin_platform_interface/plugin_platform_interface.dart';
 
@@ -102,7 +100,9 @@ class FakeDartV2rayPlatform extends DartV2rayPlatform
   }
 
   @override
-  Future<Map<String, dynamic>> getWindowsDebugLogs({int maxBytes = 16384}) async {
+  Future<Map<String, dynamic>> getWindowsDebugLogs({
+    int maxBytes = 16384,
+  }) async {
     return <String, dynamic>{'supported': false, 'maxBytes': maxBytes};
   }
 
@@ -132,7 +132,7 @@ void main() {
     final fakePlatform = FakeDartV2rayPlatform();
     DartV2rayPlatform.instance = fakePlatform;
 
-    await plugin.start(remark: 'test', config: '{}');
+    await plugin.start(remark: 'test', config: '{"outbounds":[{}]}');
 
     expect(fakePlatform.startCalled, isTrue);
   });
@@ -154,41 +154,44 @@ void main() {
     expect(parsed, isA<VlessUrl>());
   });
 
-  test('parseShareLink builds VLESS reality configs without VMess-only fields', () {
-    final parsed = DartV2ray.parseShareLink(
-      'vless://123e4567-e89b-12d3-a456-426614174000@example.com:443'
-      '?security=reality&type=tcp&flow=xtls-rprx-vision&sni=yandex.ru'
-      '&fp=chrome&pbk=test-public-key&sid=6ba87f12#demo',
-    );
+  test(
+    'parseShareLink builds VLESS reality configs without VMess-only fields',
+    () {
+      final parsed = DartV2ray.parseShareLink(
+        'vless://123e4567-e89b-12d3-a456-426614174000@example.com:443'
+        '?security=reality&type=tcp&flow=xtls-rprx-vision&sni=yandex.ru'
+        '&fp=chrome&pbk=test-public-key&sid=6ba87f12#demo',
+      );
 
-    final Map<String, dynamic> config =
-        jsonDecode(parsed.getFullConfiguration()) as Map<String, dynamic>;
-    final Map<String, dynamic> outbound =
-        (config['outbounds'] as List<dynamic>).first as Map<String, dynamic>;
-    final Map<String, dynamic> settings =
-        outbound['settings'] as Map<String, dynamic>;
-    final Map<String, dynamic> vnext =
-        (settings['vnext'] as List<dynamic>).first as Map<String, dynamic>;
-    final Map<String, dynamic> user =
-        (vnext['users'] as List<dynamic>).first as Map<String, dynamic>;
-    final Map<String, dynamic> streamSettings =
-        outbound['streamSettings'] as Map<String, dynamic>;
-    final Map<String, dynamic> realitySettings =
-        streamSettings['realitySettings'] as Map<String, dynamic>;
+      final Map<String, dynamic> config =
+          jsonDecode(parsed.getFullConfiguration()) as Map<String, dynamic>;
+      final Map<String, dynamic> outbound =
+          (config['outbounds'] as List<dynamic>).first as Map<String, dynamic>;
+      final Map<String, dynamic> settings =
+          outbound['settings'] as Map<String, dynamic>;
+      final Map<String, dynamic> vnext =
+          (settings['vnext'] as List<dynamic>).first as Map<String, dynamic>;
+      final Map<String, dynamic> user =
+          (vnext['users'] as List<dynamic>).first as Map<String, dynamic>;
+      final Map<String, dynamic> streamSettings =
+          outbound['streamSettings'] as Map<String, dynamic>;
+      final Map<String, dynamic> realitySettings =
+          streamSettings['realitySettings'] as Map<String, dynamic>;
 
-    expect(outbound['protocol'], 'vless');
-    expect(user['id'], '123e4567-e89b-12d3-a456-426614174000');
-    expect(user['encryption'], 'none');
-    expect(user['flow'], 'xtls-rprx-vision');
-    expect(user.containsKey('security'), isFalse);
-    expect(user.containsKey('alterId'), isFalse);
-    expect(streamSettings['security'], 'reality');
-    expect(streamSettings.containsKey('tlsSettings'), isFalse);
-    expect(realitySettings['serverName'], 'yandex.ru');
-    expect(realitySettings['fingerprint'], 'chrome');
-    expect(realitySettings['publicKey'], 'test-public-key');
-    expect(realitySettings['shortId'], '6ba87f12');
-    expect(realitySettings.containsKey('allowInsecure'), isFalse);
-    expect(realitySettings.containsKey('alpn'), isFalse);
-  });
+      expect(outbound['protocol'], 'vless');
+      expect(user['id'], '123e4567-e89b-12d3-a456-426614174000');
+      expect(user['encryption'], 'none');
+      expect(user['flow'], 'xtls-rprx-vision');
+      expect(user.containsKey('security'), isFalse);
+      expect(user.containsKey('alterId'), isFalse);
+      expect(streamSettings['security'], 'reality');
+      expect(streamSettings.containsKey('tlsSettings'), isFalse);
+      expect(realitySettings['serverName'], 'yandex.ru');
+      expect(realitySettings['fingerprint'], 'chrome');
+      expect(realitySettings['publicKey'], 'test-public-key');
+      expect(realitySettings['shortId'], '6ba87f12');
+      expect(realitySettings.containsKey('allowInsecure'), isFalse);
+      expect(realitySettings.containsKey('alpn'), isFalse);
+    },
+  );
 }
