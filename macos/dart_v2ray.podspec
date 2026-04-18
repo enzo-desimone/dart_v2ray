@@ -20,12 +20,17 @@ auto-disconnect support.
   bundled_xray_files = Dir.glob('bin/xray*').select { |path| File.file?(path) }
   s.resources = bundled_xray_files unless bundled_xray_files.empty?
   s.static_framework = true
+  s.libraries = 'c++'
   s.dependency 'FlutterMacOS'
   s.platform = :osx, '10.14'
 
   s.pod_target_xcconfig = {
     'DEFINES_MODULE' => 'YES',
     'CLANG_CXX_LANGUAGE_STANDARD' => 'c++17',
-    'CLANG_CXX_LIBRARY' => 'libc++'
+    'CLANG_CXX_LIBRARY' => 'libc++',
+    'OTHER_LDFLAGS' => '$(inherited) -lc++'
+  }
+  s.user_target_xcconfig = {
+    'OTHER_LDFLAGS' => '$(inherited) -lc++'
   }
 end
