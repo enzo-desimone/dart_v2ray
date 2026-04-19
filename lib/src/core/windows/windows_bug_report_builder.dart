@@ -2,7 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
 
-import '../../models/connection_status.dart';
+import '../../models/vpn_status.dart';
 
 /// Builds Windows diagnostics payloads suitable for bug-report submission.
 class WindowsBugReportBuilder {
@@ -10,7 +10,7 @@ class WindowsBugReportBuilder {
   static Future<Map<String, dynamic>> build({
     required Future<Map<String, dynamic>> Function({int maxBytes})
     debugLogsFetcher,
-    required ConnectionStatus latestStatus,
+    required VpnStatus latestStatus,
     int tailMaxBytes = 16384,
     bool includeLatestStatus = true,
     bool includeLogFiles = true,

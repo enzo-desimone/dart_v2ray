@@ -1072,6 +1072,16 @@ std::string DesktopV2rayCore::Start(const std::string& config, const StartOption
 #endif
   Stop();
 
+  auto fail_start = [this](const std::string& message) -> std::string {
+    std::lock_guard<std::mutex> lock(mutex_);
+    state_ = "ERROR";
+    transport_mode_ = "idle";
+    auto_disconnect_deadline_.reset();
+    auto_disconnected_ = false;
+    last_error_message_ = message;
+    return message;
+  };
+
   runtime_paths_ = DiscoverRuntimePaths();
 
   const bool tun_requested = effective_options.require_tun;
@@ -1080,7 +1090,7 @@ std::string DesktopV2rayCore::Start(const std::string& config, const StartOption
 #if defined(_WIN32)
     LogLine("Start aborted due to runtime validation error: " + runtime_error);
 #endif
-    return runtime_error;
+    return fail_start(runtime_error);
   }
 
   bool has_usable_outbounds = false;
@@ -1102,7 +1112,7 @@ std::string DesktopV2rayCore::Start(const std::string& config, const StartOption
 #if defined(_WIN32)
     LogLine("Start aborted: provided config does not contain any usable outbounds.");
 #endif
-    return "Provided Xray config must contain at least one outbound.";
+    return fail_start("Provided Xray config must contain at least one outbound.");
   }
 
   bool use_tun = false;
@@ -1115,32 +1125,36 @@ std::string DesktopV2rayCore::Start(const std::string& config, const StartOption
 #if defined(_WIN32)
       LogLine("Start failed: Windows TUN mode requested without elevation.");
 #endif
-      return "Windows TUN mode requires administrator privileges. Restart app as Administrator or set requireTun=false.";
+      return fail_start(
+          "Windows TUN mode requires administrator privileges. Restart app as Administrator or set requireTun=false.");
     }
     if (mode_note == "proxy_fallback_missing_wintun") {
 #if defined(_WIN32)
       LogLine("Start failed: Windows TUN mode requested but wintun.dll was not found.");
 #endif
-      return "Windows TUN mode requested but wintun.dll was not found.";
+      return fail_start("Windows TUN mode requested but wintun.dll was not found.");
     }
     if (mode_note == "proxy_fallback_missing_outbound_tag" ||
         mode_note == "tun_missing_outbound_tag") {
 #if defined(_WIN32)
       LogLine("Start failed: Windows TUN mode requires at least one outbound tag.");
 #endif
-      return "TUN mode requires at least one outbound with a tag. Use tag \"proxy\" or any tagged outbound.";
+      return fail_start(
+          "TUN mode requires at least one outbound with a tag. Use tag \"proxy\" or any tagged outbound.");
     }
     if (mode_note == "tun_unsupported_macos") {
-      return "TUN mode is not supported by Xray on macOS. Set requireTun=false and use proxy mode.";
+      return fail_start(
+          "TUN mode is not supported by Xray on macOS. Set requireTun=false and use proxy mode.");
     }
 #if defined(_WIN32)
     LogLine("Start failed: unable to construct TUN config. mode_note=" + mode_note);
 #endif
-    return "Failed to construct TUN config from provided JSON. Set requireTun=false or provide a standard Xray config root object.";
+    return fail_start(
+        "Failed to construct TUN config from provided JSON. Set requireTun=false or provide a standard Xray config root object.");
   }
 
   if (!WriteConfig(effective_config)) {
-    return "Cannot write temporary Xray configuration file.";
+    return fail_start("Cannot write temporary Xray configuration file.");
   }
 
   {
@@ -1213,14 +1227,12 @@ std::string DesktopV2rayCore::Start(const std::string& config, const StartOption
       CloseHandle(xray_log_handle);
     }
     const DWORD error_code = GetLastError();
-    std::lock_guard<std::mutex> lock(mutex_);
-    state_ = "DISCONNECTED";
     std::ostringstream error;
     error << "Unable to start xray process. Ensure xray.exe is bundled or XRAY_EXECUTABLE is set."
           << " executable=" << runtime_paths_.xray_executable << " config=" << config_path_
           << " win32_error=" << error_code << " (" << Win32ErrorToString(error_code)
           << ")";
-    return error.str();
+    return fail_start(error.str());
   }
 
   if (xray_log_handle != INVALID_HANDLE_VALUE) {
@@ -1235,9 +1247,7 @@ std::string DesktopV2rayCore::Start(const std::string& config, const StartOption
     _exit(1);
   }
   if (pid < 0) {
-    std::lock_guard<std::mutex> lock(mutex_);
-    state_ = "DISCONNECTED";
-    return "Unable to fork xray process.";
+    return fail_start("Unable to fork xray process.");
   }
 
   auto process = std::make_unique<ProcessHandle>();
@@ -1250,7 +1260,7 @@ std::string DesktopV2rayCore::Start(const std::string& config, const StartOption
     std::string network_error;
     if (!ApplyTunNetworking(effective_options, effective_config, &network_error)) {
       Stop();
-      return network_error;
+      return fail_start(network_error);
     }
   }
 #endif
@@ -1262,6 +1272,7 @@ std::string DesktopV2rayCore::Start(const std::string& config, const StartOption
     connected_at_ = std::chrono::steady_clock::now();
     auto_disconnected_ = false;
     auto_disconnect_timestamp_ms_ = 0;
+    last_error_message_.clear();
 #if defined(_WIN32)
     if (!use_tun) {
       tun_interface_index_.reset();
@@ -1322,6 +1333,9 @@ std::string DesktopV2rayCore::Stop(bool from_auto_disconnect) {
       state_ = "DISCONNECTED";
       transport_mode_ = "idle";
       auto_disconnect_deadline_.reset();
+      if (!from_auto_disconnect) {
+        last_error_message_.clear();
+      }
 #if defined(_WIN32)
       tun_interface_index_.reset();
       upstream_interface_index_.reset();
@@ -1385,6 +1399,9 @@ std::string DesktopV2rayCore::Stop(bool from_auto_disconnect) {
       auto_disconnect_timestamp_ms_ = std::chrono::duration_cast<std::chrono::milliseconds>(
           std::chrono::system_clock::now().time_since_epoch())
           .count();
+      last_error_message_.clear();
+    } else {
+      last_error_message_.clear();
     }
     auto_disconnect_deadline_.reset();
 #if defined(_WIN32)
@@ -1512,6 +1529,7 @@ bool DesktopV2rayCore::IsProcessRunning() const {
 
 void DesktopV2rayCore::PollProcessAndHandleExit() {
   bool should_cleanup = false;
+  std::string exit_reason = "Xray process exited unexpectedly.";
   {
     std::lock_guard<std::mutex> lock(mutex_);
     if (!process_ || state_ == "DISCONNECTED") {
@@ -1520,6 +1538,12 @@ void DesktopV2rayCore::PollProcessAndHandleExit() {
     if (IsProcessRunning()) {
       return;
     }
+#if defined(_WIN32)
+    DWORD exit_code = 0;
+    if (GetExitCodeProcess(process_->pi.hProcess, &exit_code) == TRUE) {
+      exit_reason = "Xray process exited unexpectedly (code=" + std::to_string(exit_code) + ").";
+    }
+#endif
     should_cleanup = true;
   }
 
@@ -1527,6 +1551,12 @@ void DesktopV2rayCore::PollProcessAndHandleExit() {
     return;
   }
   Stop();
+  std::lock_guard<std::mutex> lock(mutex_);
+  state_ = "ERROR";
+  transport_mode_ = "idle";
+  auto_disconnected_ = false;
+  auto_disconnect_timestamp_ms_ = 0;
+  last_error_message_ = exit_reason;
 }
 
 int DesktopV2rayCore::UpdateAutoDisconnectTime(int additional_seconds) {
@@ -1612,7 +1642,11 @@ std::vector<std::string> DesktopV2rayCore::BuildStatusPayload() const {
 
 #if defined(_WIN32)
   std::string selected_source = "none";
-  std::string selected_reason = state_ == "CONNECTED" ? "no_data" : "not_connected";
+  std::string selected_reason = effective_state == "CONNECTED" ? "no_data" : "not_connected";
+  if (effective_state == "ERROR") {
+    selected_source = "error";
+    selected_reason = last_error_message_.empty() ? "unknown_error" : last_error_message_;
+  }
   bool tun_counter_read_ok = false;
   bool process_counter_read_ok = false;
   bool upstream_counter_read_ok = false;
@@ -1864,7 +1898,9 @@ std::vector<std::string> DesktopV2rayCore::BuildStatusPayload() const {
 #endif
 
   std::string connection_phase;
-  if (effective_state == "CONNECTING") {
+  if (effective_state == "ERROR") {
+    connection_phase = "ERROR";
+  } else if (effective_state == "CONNECTING") {
     connection_phase = "CONNECTING";
   } else if (effective_state == "AUTO_DISCONNECTED") {
     connection_phase = "AUTO_DISCONNECTED";
@@ -1905,8 +1941,8 @@ std::vector<std::string> DesktopV2rayCore::BuildStatusPayload() const {
   payload.push_back(last_traffic_source_);
   payload.push_back(last_traffic_reason_);
 #else
-  payload.push_back("");
-  payload.push_back("");
+  payload.push_back(effective_state == "ERROR" ? "core_error" : "");
+  payload.push_back(effective_state == "ERROR" ? last_error_message_ : "");
 #endif
   payload.push_back(process_running ? "true" : "false");
 
@@ -1927,6 +1963,9 @@ std::map<std::string, std::string> DesktopV2rayCore::GetWindowsTrafficDebugInfo(
   info["transport_mode"] = payload.size() > 8 ? payload[8] : transport_mode_;
   info["traffic_source"] = payload.size() > 9 ? payload[9] : last_traffic_source_;
   info["traffic_reason"] = payload.size() > 10 ? payload[10] : last_traffic_reason_;
+  info["error_message"] = info["state"] == "ERROR"
+                              ? (payload.size() > 10 ? payload[10] : last_error_message_)
+                              : "";
   info["duration_seconds"] = payload.size() > 0 ? payload[0] : "0";
   info["upload_speed_bps"] = payload.size() > 1 ? payload[1] : "0";
   info["download_speed_bps"] = payload.size() > 2 ? payload[2] : "0";

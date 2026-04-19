@@ -1,11 +1,11 @@
-import '../models/connection_status.dart';
+import '../models/vpn_status.dart';
 
-/// Converts native event-channel payloads to [ConnectionStatus].
+/// Converts native event-channel payloads to [VpnStatus].
 class StatusEventParser {
   /// Parses a single event item from the `dart_v2ray/status` channel.
-  static ConnectionStatus parse(dynamic event) {
+  static VpnStatus parse(dynamic event) {
     if (event is! List) {
-      return const ConnectionStatus();
+      return const VpnStatus();
     }
 
     int parseIntAt(int index) {
@@ -39,24 +39,28 @@ class StatusEventParser {
       return fallback;
     }
 
-    final int? remainingAutoDisconnectSeconds =
+    final int? autoDisconnectRemainingSeconds =
         event.length > 6 && event[6] != null
             ? int.tryParse(event[6].toString())
             : null;
 
-    return ConnectionStatus(
-      durationSeconds: parseIntAt(0),
-      uploadSpeedBytesPerSecond: parseIntAt(1),
-      downloadSpeedBytesPerSecond: parseIntAt(2),
-      uploadBytesTotal: parseIntAt(3),
-      downloadBytesTotal: parseIntAt(4),
-      state: parseStringAt(5, 'DISCONNECTED'),
-      connectionPhase: parseStringAt(7, parseStringAt(5, 'DISCONNECTED')),
+    final VpnConnectionState connectionState = VpnStatus.resolveState(
+      parseStringAt(5, VpnConnectionState.disconnected.wireValue),
+      phaseHint: parseStringAt(7),
+    );
+
+    return VpnStatus(
+      sessionSeconds: parseIntAt(0),
+      uploadSpeedBps: parseIntAt(1),
+      downloadSpeedBps: parseIntAt(2),
+      uploadedBytes: parseIntAt(3),
+      downloadedBytes: parseIntAt(4),
+      connectionState: connectionState,
       transportMode: parseStringAt(8, 'idle'),
       trafficSource: parseStringAt(9),
-      trafficReason: parseStringAt(10),
-      isProcessRunning: parseBoolAt(11),
-      remainingAutoDisconnectSeconds: remainingAutoDisconnectSeconds,
+      statusReason: parseStringAt(10),
+      processRunning: parseBoolAt(11),
+      autoDisconnectRemainingSeconds: autoDisconnectRemainingSeconds,
     );
   }
 }

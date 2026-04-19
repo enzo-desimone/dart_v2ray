@@ -136,8 +136,9 @@ await v2ray.start(
   - Verify extension bundle contains `xray`, `geoip.dat`, `geosite.dat`.
   - Verify your Xray JSON has at least one inbound `socks`/`http`/`mixed`
     with a valid `port` (used by tun2socks).
-- No traffic observed: check `onStatusChanged` fields (`state`,
-  `connectionPhase`, `isProcessRunning`) and confirm config validity.
+- No traffic observed: check `onStatusChanged` fields (`connectionState`,
+  `processRunning`, `trafficSource`, `statusReason`) and confirm config
+  validity. Runtime/start failures are surfaced as `connectionState = ERROR`.
 
 ## Compatibility Note
 

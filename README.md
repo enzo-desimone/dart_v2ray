@@ -103,6 +103,16 @@ Status stream:
 - `stopPersistentStatusListener()`
 - `dispose()`
 
+Canonical `VpnStatus.connectionState` values:
+- `CONNECTING`: native startup/tunnel preparation in progress.
+- `CONNECTED`: session active.
+- `DISCONNECTED`: session stopped.
+- `AUTO_DISCONNECTED`: session ended by auto-disconnect timer.
+- `ERROR`: startup/runtime failure detected.
+
+For diagnostics, keep using `transportMode`, `trafficSource`, `statusReason`,
+and `processRunning`.
+
 Share-link parsing:
 
 ```dart

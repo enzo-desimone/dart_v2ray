@@ -90,6 +90,11 @@ object XrayCoreManager {
 
     fun getLastStartError(): String? = lastStartError
 
+    fun markError(message: String) {
+        lastStartError = message
+        AppConfigs.V2RAY_STATE = AppConfigs.V2RAY_STATES.V2RAY_ERROR
+    }
+
     /**
      * Called by XrayVPNService after VPN interface is successfully established.
      * This is when we mark the connection as active and start UI updates.
@@ -117,13 +122,32 @@ object XrayCoreManager {
         xrayProcess?.destroy()
         xrayProcess = null
 
-        AppConfigs.V2RAY_STATE = AppConfigs.V2RAY_STATES.V2RAY_DISCONNECTED
+        val terminalState = when (AppConfigs.V2RAY_STATE) {
+            AppConfigs.V2RAY_STATES.V2RAY_AUTO_DISCONNECTED ->
+                AppConfigs.V2RAY_STATES.V2RAY_AUTO_DISCONNECTED
+            AppConfigs.V2RAY_STATES.V2RAY_ERROR ->
+                AppConfigs.V2RAY_STATES.V2RAY_ERROR
+            else ->
+                AppConfigs.V2RAY_STATES.V2RAY_DISCONNECTED
+        }
+        AppConfigs.V2RAY_STATE = terminalState
         stopTimer()
 
         (context.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager)
             ?.cancel(NOTIFICATION_ID)
 
-        sendDisconnectedBroadcast(context)
+        sendTerminalBroadcast(
+            context = context,
+            state = terminalState,
+            error = if (terminalState == AppConfigs.V2RAY_STATES.V2RAY_ERROR) {
+                lastStartError
+            } else {
+                null
+            }
+        )
+        if (terminalState != AppConfigs.V2RAY_STATES.V2RAY_ERROR) {
+            lastStartError = null
+        }
     }
 
     /**
@@ -313,8 +337,11 @@ object XrayCoreManager {
 
                 val exitCode = xrayProcess?.waitFor()
                 Log.e(TAG, "Xray process exited with code $exitCode")
-                
-                if (AppConfigs.V2RAY_STATE == AppConfigs.V2RAY_STATES.V2RAY_CONNECTED) {
+
+                if (AppConfigs.V2RAY_STATE == AppConfigs.V2RAY_STATES.V2RAY_CONNECTED ||
+                    AppConfigs.V2RAY_STATE == AppConfigs.V2RAY_STATES.V2RAY_CONNECTING
+                ) {
+                    markError("Xray process exited unexpectedly (code: ${exitCode ?: -1})")
                     stopCore(context)
                 }
             }.onFailure { exception ->
@@ -400,6 +427,11 @@ object XrayCoreManager {
             putExtra("DOWNLOAD_SPEED", traffic[1])
             putExtra("UPLOAD_TRAFFIC", traffic[2])
             putExtra("DOWNLOAD_TRAFFIC", traffic[3])
+            if (AppConfigs.V2RAY_STATE == AppConfigs.V2RAY_STATES.V2RAY_ERROR &&
+                !lastStartError.isNullOrBlank()
+            ) {
+                putExtra("ERROR", lastStartError)
+            }
             // Add remaining auto-disconnect time
             if (autoDisconnectEnabled && remainingAutoDisconnectSeconds >= 0) {
                 putExtra("REMAINING_TIME", remainingAutoDisconnectSeconds.toString())
@@ -572,6 +604,7 @@ object XrayCoreManager {
     private fun handleAutoDisconnectExpiry(context: Context) {
         Log.d(TAG, "Auto-disconnect time expired")
         autoDisconnectEnabled = false
+        lastStartError = null
         
         val config = AppConfigs.V2RAY_CONFIG
         
@@ -700,14 +733,21 @@ object XrayCoreManager {
 
     // MARK: - Broadcast Helpers
 
-    private fun sendDisconnectedBroadcast(context: Context) {
+    private fun sendTerminalBroadcast(
+        context: Context,
+        state: AppConfigs.V2RAY_STATES,
+        error: String? = null
+    ) {
         Intent(AppConfigs.V2RAY_CONNECTION_INFO).apply {
-            putExtra("STATE", AppConfigs.V2RAY_STATES.V2RAY_DISCONNECTED)
+            putExtra("STATE", state)
             putExtra("DURATION", "0")
             putExtra("UPLOAD_SPEED", 0L)
             putExtra("DOWNLOAD_SPEED", 0L)
             putExtra("UPLOAD_TRAFFIC", 0L)
             putExtra("DOWNLOAD_TRAFFIC", 0L)
+            if (!error.isNullOrBlank()) {
+                putExtra("ERROR", error)
+            }
         }.also { context.sendBroadcast(it) }
     }
 
@@ -961,5 +1001,3 @@ object XrayCoreManager {
             .commit()
     }
 }
-
-

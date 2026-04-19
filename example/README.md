@@ -8,7 +8,7 @@ focus on reliable connection-state visibility and troubleshooting.
 - Plugin initialization and permission flow
 - Share-link import (`vless://`, `vmess://`, `trojan://`, `ss://`, `socks://`)
 - Start/stop session controls with guarded button states
-- Live status surface (`state`, `connectionPhase`, traffic counters/speeds)
+- Live status surface (`connectionState`, traffic counters/speeds + diagnostics fields)
 - Windows diagnostics and debug log retrieval
 - Optional console status logging and periodic diagnostics polling
 

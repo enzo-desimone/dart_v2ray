@@ -12,11 +12,15 @@
 - Rewrote the global README and added platform-specific guides under
   `docs/platforms/*`.
 
-- Expanded `ConnectionStatus` with lifecycle and diagnostics fields:
-  `connectionPhase`, `transportMode`, `trafficSource`, `trafficReason`,
-  and `isProcessRunning`.
-- Improved Windows status payload semantics with connection phases
-  (`VERIFYING`, `READY`, `ACTIVE`) and explicit `AUTO_DISCONNECTED` propagation.
+- Replaced `ConnectionStatus` with `VpnStatus` and introduced
+  `VpnConnectionState` as the canonical status enum.
+- Renamed status fields to the new API:
+  `connectionState`, `sessionSeconds`, `uploadSpeedBps`, `downloadSpeedBps`,
+  `uploadedBytes`, `downloadedBytes`, `processRunning`, `statusReason`,
+  `autoDisconnectRemainingSeconds`.
+- Removed legacy phase-based surface and all backward-compatible aliases.
+- Added `ERROR` propagation across Android/iOS/macOS/desktop flows so startup
+  and runtime failures are surfaced through `onStatusChanged`.
 - Added periodic status heartbeat on Windows event stream publishing
   to reduce stale UI status conditions.
 - Updated example app to expose stronger connection-state visibility,

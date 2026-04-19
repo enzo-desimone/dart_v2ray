@@ -56,6 +56,9 @@ compatible native binaries for `libxray.so` and `libtun2socks.so`.
 ## Troubleshooting
 
 - Permission denied: call `requestPermission()` before `start(...)`.
-- Connection starts but no traffic: inspect `onStatusChanged` and verify
-  `connectionPhase`.
+- Connection fails during startup/runtime: inspect
+  `onStatusChanged.connectionState` and `statusReason`
+  (`ERROR` is emitted when failure is detected).
+- Connection starts but no traffic: inspect `transportMode`,
+  `trafficSource`, and `processRunning`.
 - Emulator failures: switch to ARM image or physical ARM device.

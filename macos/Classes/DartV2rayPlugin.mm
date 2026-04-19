@@ -148,7 +148,7 @@ static NSString* VpnStatusToStateString(NEVPNStatus status) {
     case NEVPNStatusReasserting:
       return @"CONNECTING";
     case NEVPNStatusDisconnecting:
-      return @"DISCONNECTING";
+      return @"DISCONNECTED";
     case NEVPNStatusInvalid:
     case NEVPNStatusDisconnected:
     default:
@@ -188,6 +188,7 @@ static NSInteger ParseIntegerString(NSString* value, NSInteger fallback_value) {
   uint64_t _packetDownloadTotal;
   uint64_t _packetUploadSpeed;
   uint64_t _packetDownloadSpeed;
+  NSString* _packetLastErrorReason;
 }
 
 - (void)configureFromInitializeArgs:(NSDictionary*)args;
@@ -217,8 +218,10 @@ static NSInteger ParseIntegerString(NSString* value, NSInteger fallback_value) {
 - (void)emitCoreStatus;
 - (void)refreshPacketTunnelStatusAndEmit;
 - (NSArray<NSString*>*)buildPacketTunnelPayloadWithState:(NSString*)state
-                                                remaining:(NSString*)remaining;
+                                                remaining:(NSString*)remaining
+                                                   reason:(NSString*)reason;
 - (void)resetPacketTunnelCounters;
+- (void)emitPacketTunnelError:(NSString*)reason;
 
 @end
 
@@ -258,6 +261,7 @@ static NSInteger ParseIntegerString(NSString* value, NSInteger fallback_value) {
     _packetDownloadTotal = 0;
     _packetUploadSpeed = 0;
     _packetDownloadSpeed = 0;
+    _packetLastErrorReason = nil;
   }
   return self;
 }
@@ -606,6 +610,7 @@ static NSInteger ParseIntegerString(NSString* value, NSInteger fallback_value) {
 - (void)startDesktopCoreWithArguments:(NSDictionary*)args result:(FlutterResult)result {
   NSString* packet_stop_error = [self stopPacketTunnelIfNeeded];
   if (packet_stop_error != nil) {
+    [self emitPacketTunnelError:packet_stop_error];
     result([FlutterError errorWithCode:@"start_failed"
                                message:packet_stop_error
                                details:nil]);
@@ -630,6 +635,7 @@ static NSInteger ParseIntegerString(NSString* value, NSInteger fallback_value) {
   const char* config_utf8 = [(NSString*)config_value UTF8String];
   const std::string start_error = _core->Start(config_utf8 != nullptr ? config_utf8 : "", options);
   if (!start_error.empty()) {
+    [self emitStatus];
     result([FlutterError errorWithCode:@"start_failed"
                                message:[NSString stringWithUTF8String:start_error.c_str()]
                                details:nil]);
@@ -650,6 +656,8 @@ static NSInteger ParseIntegerString(NSString* value, NSInteger fallback_value) {
   }
 
   if (_providerBundleIdentifier.length == 0 || _groupIdentifier.length == 0) {
+    [self emitPacketTunnelError:
+              @"initialize() must provide providerBundleIdentifier and groupIdentifier before requireTun=true on macOS."];
     result([FlutterError
         errorWithCode:@"invalid_state"
               message:@"initialize() must provide providerBundleIdentifier and groupIdentifier before requireTun=true on macOS."
@@ -659,6 +667,7 @@ static NSInteger ParseIntegerString(NSString* value, NSInteger fallback_value) {
 
   const std::string stop_error = _core->Stop();
   if (!stop_error.empty()) {
+    [self emitPacketTunnelError:[NSString stringWithUTF8String:stop_error.c_str()]];
     result([FlutterError errorWithCode:@"start_failed"
                                message:[NSString stringWithUTF8String:stop_error.c_str()]
                                details:nil]);
@@ -677,6 +686,7 @@ static NSInteger ParseIntegerString(NSString* value, NSInteger fallback_value) {
 
       if (manager_error != nil || manager == nil) {
         NSString* message = manager_error.localizedDescription ?: @"Unable to load Packet Tunnel manager.";
+        [strong_self emitPacketTunnelError:message];
         result([FlutterError errorWithCode:@"start_failed" message:message details:nil]);
         return;
       }
@@ -686,6 +696,7 @@ static NSInteger ParseIntegerString(NSString* value, NSInteger fallback_value) {
       [manager saveToPreferencesWithCompletionHandler:^(NSError* save_error) {
         dispatch_async(dispatch_get_main_queue(), ^{
           if (save_error != nil) {
+            [strong_self emitPacketTunnelError:save_error.localizedDescription];
             result([FlutterError errorWithCode:@"start_failed"
                                        message:save_error.localizedDescription
                                        details:nil]);
@@ -695,6 +706,7 @@ static NSInteger ParseIntegerString(NSString* value, NSInteger fallback_value) {
           [manager loadFromPreferencesWithCompletionHandler:^(NSError* load_error) {
             dispatch_async(dispatch_get_main_queue(), ^{
               if (load_error != nil) {
+                [strong_self emitPacketTunnelError:load_error.localizedDescription];
                 result([FlutterError errorWithCode:@"start_failed"
                                            message:load_error.localizedDescription
                                            details:nil]);
@@ -705,6 +717,7 @@ static NSInteger ParseIntegerString(NSString* value, NSInteger fallback_value) {
               BOOL started = [manager.connection startVPNTunnelAndReturnError:&start_error];
               if (!started || start_error != nil) {
                 NSString* message = start_error.localizedDescription ?: @"Failed to start Packet Tunnel.";
+                [strong_self emitPacketTunnelError:message];
                 result([FlutterError errorWithCode:@"start_failed" message:message details:nil]);
                 return;
               }
@@ -712,6 +725,7 @@ static NSInteger ParseIntegerString(NSString* value, NSInteger fallback_value) {
               strong_self->_packetTunnelManager = manager;
               strong_self->_usingPacketTunnel = YES;
               strong_self->_packetStatusRefreshInFlight = NO;
+              strong_self->_packetLastErrorReason = nil;
               [strong_self resetPacketTunnelCounters];
               [strong_self emitStatus];
 
@@ -959,6 +973,12 @@ static NSInteger ParseIntegerString(NSString* value, NSInteger fallback_value) {
   }
 
   if (_packetTunnelManager == nil) {
+    if (_packetLastErrorReason.length > 0) {
+      _statusSink([self buildPacketTunnelPayloadWithState:@"ERROR"
+                                                 remaining:@""
+                                                    reason:_packetLastErrorReason]);
+      return;
+    }
     _usingPacketTunnel = NO;
     [self emitCoreStatus];
     return;
@@ -970,17 +990,18 @@ static NSInteger ParseIntegerString(NSString* value, NSInteger fallback_value) {
       state = @"AUTO_DISCONNECTED";
     }
 
-    if (![state isEqualToString:@"CONNECTING"] && ![state isEqualToString:@"DISCONNECTING"]) {
+    if (![state isEqualToString:@"CONNECTING"]) {
       _usingPacketTunnel = NO;
       _packetStatusRefreshInFlight = NO;
       [self resetPacketTunnelCounters];
     }
 
-    _statusSink([self buildPacketTunnelPayloadWithState:state remaining:@""]);
+    _statusSink([self buildPacketTunnelPayloadWithState:state remaining:@"" reason:nil]);
     return;
   }
 
   _usingPacketTunnel = YES;
+  _packetLastErrorReason = nil;
   if (_packetStatusRefreshInFlight) {
     return;
   }
@@ -1057,7 +1078,9 @@ static NSInteger ParseIntegerString(NSString* value, NSInteger fallback_value) {
 
           inner_self->_packetStatusRefreshInFlight = NO;
           inner_self->_statusSink(
-              [inner_self buildPacketTunnelPayloadWithState:@"CONNECTED" remaining:remaining]);
+              [inner_self buildPacketTunnelPayloadWithState:@"CONNECTED"
+                                                   remaining:remaining
+                                                      reason:nil]);
         });
       }];
     });
@@ -1065,7 +1088,8 @@ static NSInteger ParseIntegerString(NSString* value, NSInteger fallback_value) {
 }
 
 - (NSArray<NSString*>*)buildPacketTunnelPayloadWithState:(NSString*)state
-                                                remaining:(NSString*)remaining {
+                                                remaining:(NSString*)remaining
+                                                   reason:(NSString*)reason {
   if (![state isEqualToString:@"CONNECTED"]) {
     _packetConnectedAt = nil;
   } else if (_packetConnectedAt == nil) {
@@ -1085,26 +1109,32 @@ static NSInteger ParseIntegerString(NSString* value, NSInteger fallback_value) {
       _packetDownloadTotal > 0;
 
   NSString* connection_phase = @"DISCONNECTED";
-  if ([state isEqualToString:@"CONNECTING"] || [state isEqualToString:@"DISCONNECTING"]) {
+  if ([state isEqualToString:@"CONNECTING"]) {
     connection_phase = @"CONNECTING";
   } else if ([state isEqualToString:@"AUTO_DISCONNECTED"]) {
     connection_phase = @"AUTO_DISCONNECTED";
+  } else if ([state isEqualToString:@"ERROR"]) {
+    connection_phase = @"ERROR";
   } else if ([state isEqualToString:@"CONNECTED"]) {
     connection_phase = traffic_observed ? @"ACTIVE" : @"READY";
   }
 
   NSString* traffic_source = @"";
-  NSString* traffic_reason = @"";
+  NSString* traffic_reason = reason ?: @"";
   if ([state isEqualToString:@"CONNECTED"]) {
     traffic_source = @"packet_tunnel";
     traffic_reason = traffic_observed ? @"extension_stats" : @"extension_no_traffic";
   } else if ([state isEqualToString:@"AUTO_DISCONNECTED"]) {
     traffic_reason = @"auto_disconnect_expired";
+  } else if ([state isEqualToString:@"ERROR"]) {
+    traffic_source = @"packet_tunnel";
+    if (traffic_reason.length == 0) {
+      traffic_reason = _packetLastErrorReason ?: @"packet_tunnel_error";
+    }
   }
 
   const BOOL process_running =
-      [state isEqualToString:@"CONNECTED"] || [state isEqualToString:@"CONNECTING"] ||
-      [state isEqualToString:@"DISCONNECTING"];
+      [state isEqualToString:@"CONNECTED"] || [state isEqualToString:@"CONNECTING"];
 
   return @[
     [NSString stringWithFormat:@"%d", duration_seconds],
@@ -1122,12 +1152,23 @@ static NSInteger ParseIntegerString(NSString* value, NSInteger fallback_value) {
   ];
 }
 
+- (void)emitPacketTunnelError:(NSString*)reason {
+  _usingPacketTunnel = YES;
+  _packetStatusRefreshInFlight = NO;
+  [self resetPacketTunnelCounters];
+  _packetLastErrorReason = reason;
+  if (_statusSink != nil) {
+    _statusSink([self buildPacketTunnelPayloadWithState:@"ERROR" remaining:@"" reason:reason]);
+  }
+}
+
 - (void)resetPacketTunnelCounters {
   _packetConnectedAt = nil;
   _packetUploadTotal = 0;
   _packetDownloadTotal = 0;
   _packetUploadSpeed = 0;
   _packetDownloadSpeed = 0;
+  _packetLastErrorReason = nil;
 }
 
 - (void)emitStatus {

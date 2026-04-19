@@ -272,6 +272,13 @@ class DartV2rayPlugin : FlutterPlugin, ActivityAware, PluginRegistry.ActivityRes
                     AppConfigs.V2RAY_STATES.V2RAY_CONNECTED -> {
                         completeStartSuccess()
                     }
+                    AppConfigs.V2RAY_STATES.V2RAY_ERROR -> {
+                        val errorDetails = intent.getStringExtra("ERROR")
+                        completeStartWithError(
+                            "VPN_START_FAILED",
+                            errorDetails ?: "VPN entered error state while starting"
+                        )
+                    }
                     AppConfigs.V2RAY_STATES.V2RAY_DISCONNECTED,
                     AppConfigs.V2RAY_STATES.V2RAY_AUTO_DISCONNECTED -> {
                         val errorDetails = intent.getStringExtra("ERROR")
@@ -450,6 +457,13 @@ class DartV2rayPlugin : FlutterPlugin, ActivityAware, PluginRegistry.ActivityRes
 
             val state = intent.getSerializableExtra("STATE") as? AppConfigs.V2RAY_STATES
             val stateName = mapStateName(state)
+            val errorMessage = intent.getStringExtra("ERROR") ?: ""
+            val transportMode = when (AppConfigs.V2RAY_CONNECTION_MODE) {
+                AppConfigs.V2RAY_CONNECTION_MODES.PROXY_ONLY -> "proxy"
+                else -> "tun"
+            }
+            val processRunning = XrayCoreManager.isXrayRunning().toString()
+            val phaseHint = stateName
 
             val data = arrayListOf(
                 intent.getStringExtra("DURATION") ?: "0",
@@ -458,7 +472,12 @@ class DartV2rayPlugin : FlutterPlugin, ActivityAware, PluginRegistry.ActivityRes
                 intent.getLongExtra("UPLOAD_TRAFFIC", 0).toString(),
                 intent.getLongExtra("DOWNLOAD_TRAFFIC", 0).toString(),
                 stateName,
-                intent.getStringExtra("REMAINING_TIME") // Can be null if auto-disconnect not active
+                intent.getStringExtra("REMAINING_TIME"), // Can be null if auto-disconnect not active
+                phaseHint,
+                transportMode,
+                "",
+                if (stateName == "ERROR") errorMessage else "",
+                processRunning
             )
 
             vpnStatusSink?.success(data)
@@ -470,8 +489,33 @@ class DartV2rayPlugin : FlutterPlugin, ActivityAware, PluginRegistry.ActivityRes
         val remaining = XrayCoreManager.getRemainingAutoDisconnectTime()
             .takeIf { it >= 0 }
             ?.toString()
+        val transportMode = when (AppConfigs.V2RAY_CONNECTION_MODE) {
+            AppConfigs.V2RAY_CONNECTION_MODES.PROXY_ONLY -> "proxy"
+            else -> "tun"
+        }
+        val processRunning = XrayCoreManager.isXrayRunning().toString()
+        val reason = if (stateName == "ERROR") {
+            XrayCoreManager.getLastStartError() ?: ""
+        } else {
+            ""
+        }
 
-        vpnStatusSink?.success(arrayListOf("0", "0", "0", "0", "0", stateName, remaining))
+        vpnStatusSink?.success(
+            arrayListOf(
+                "0",
+                "0",
+                "0",
+                "0",
+                "0",
+                stateName,
+                remaining,
+                stateName,
+                transportMode,
+                "",
+                reason,
+                processRunning
+            )
+        )
     }
 
     private fun mapStateName(state: AppConfigs.V2RAY_STATES?): String {
@@ -479,6 +523,7 @@ class DartV2rayPlugin : FlutterPlugin, ActivityAware, PluginRegistry.ActivityRes
             AppConfigs.V2RAY_STATES.V2RAY_CONNECTED -> "CONNECTED"
             AppConfigs.V2RAY_STATES.V2RAY_CONNECTING -> "CONNECTING"
             AppConfigs.V2RAY_STATES.V2RAY_AUTO_DISCONNECTED -> "AUTO_DISCONNECTED"
+            AppConfigs.V2RAY_STATES.V2RAY_ERROR -> "ERROR"
             else -> "DISCONNECTED"
         }
     }
@@ -544,4 +589,3 @@ class DartV2rayPlugin : FlutterPlugin, ActivityAware, PluginRegistry.ActivityRes
         private const val XRAY_EXECUTABLE_NAME = "libxray.so"
     }
 }
-

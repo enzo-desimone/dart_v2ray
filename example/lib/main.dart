@@ -53,8 +53,8 @@ class _DartV2rayHomePageState extends State<DartV2rayHomePage> {
     text: '{}',
   );
 
-  StreamSubscription<ConnectionStatus>? _statusSubscription;
-  ConnectionStatus _status = const ConnectionStatus();
+  StreamSubscription<VpnStatus>? _statusSubscription;
+  VpnStatus _status = const VpnStatus();
 
   bool _requireTun = false;
   bool _initialized = false;
@@ -100,13 +100,7 @@ class _DartV2rayHomePageState extends State<DartV2rayHomePage> {
   }
 
   String get _normalizedState {
-    final String normalized = _status.state.trim().toUpperCase();
-    return normalized.isEmpty ? 'DISCONNECTED' : normalized;
-  }
-
-  String get _connectionPhase {
-    final String phase = _status.connectionPhase.trim().toUpperCase();
-    return phase.isEmpty ? _normalizedState : phase;
+    return _status.connectionState.wireValue;
   }
 
   String get _trafficSourceLabel {
@@ -116,17 +110,14 @@ class _DartV2rayHomePageState extends State<DartV2rayHomePage> {
 
   bool get _isConnected => _status.isConnected;
 
-  bool get _isConnecting => _normalizedState == 'CONNECTING';
+  bool get _isConnecting => _status.isConnecting;
 
-  bool get _isConnectedByPhase =>
-      _connectionPhase == 'VERIFYING' ||
-      _connectionPhase == 'READY' ||
-      _connectionPhase == 'ACTIVE';
+  bool get _isAutoDisconnected => _status.isAutoDisconnected;
 
-  bool get _isConnectedEffective => _isConnected || _isConnectedByPhase;
+  bool get _isError => _status.isError;
 
   bool get _hasLiveSession =>
-      _isConnecting || _isConnectedEffective || _status.isProcessRunning;
+      _isConnecting || _isConnected || _status.processRunning;
 
   bool get _canEditConfiguration =>
       !_isInitializing && !_isStarting && !_isStopping && !_hasLiveSession;
@@ -162,22 +153,16 @@ class _DartV2rayHomePageState extends State<DartV2rayHomePage> {
     if (!_initialized) {
       return 'Initialization required';
     }
-    if (_isStarting || _isConnecting || _connectionPhase == 'CONNECTING') {
+    if (_isStarting || _isConnecting) {
       return 'Connection in progress';
     }
-    if (_connectionPhase == 'VERIFYING') {
-      return 'Verifying connection';
-    }
-    if (_connectionPhase == 'READY') {
-      return 'Connected and waiting for traffic';
-    }
-    if (_connectionPhase == 'ACTIVE') {
-      return 'Traffic detected';
-    }
-    if (_connectionPhase == 'AUTO_DISCONNECTED') {
+    if (_isAutoDisconnected) {
       return 'Session ended automatically';
     }
-    if (_isConnectedEffective) {
+    if (_isError) {
+      return 'Connection error';
+    }
+    if (_isConnected) {
       return 'Connection active';
     }
     if (_configValidationError != null) {
@@ -190,23 +175,24 @@ class _DartV2rayHomePageState extends State<DartV2rayHomePage> {
     if (!_initialized) {
       return 'Initialize the plugin first so the native runtime and bundled Xray core are ready.';
     }
-    if (_isStarting || _isConnecting || _connectionPhase == 'CONNECTING') {
+    if (_isStarting || _isConnecting) {
       return 'The app is requesting permission, starting Xray, and preparing the tunnel.';
     }
-    if (_connectionPhase == 'VERIFYING') {
-      return 'Xray is running in ${_status.transportMode} mode and the session is being confirmed. Speeds can stay at 0 until the first status sample is ready.';
-    }
-    if (_connectionPhase == 'READY') {
-      return 'The connection is established in ${_status.transportMode} mode, but no live traffic has been observed yet.';
-    }
-    if (_connectionPhase == 'ACTIVE') {
-      return 'Traffic is flowing via ${_trafficSourceLabel.toLowerCase()}. Speeds update continuously while the session remains active.';
-    }
-    if (_connectionPhase == 'AUTO_DISCONNECTED') {
+    if (_isAutoDisconnected) {
       return 'The last session stopped automatically. You can reconnect or inspect the logs.';
     }
-    if (_isConnectedEffective) {
-      return 'The session is marked connected, but traffic has not been classified yet.';
+    if (_isError) {
+      final String reason = _status.statusReason.trim();
+      if (reason.isEmpty) {
+        return 'The native runtime reported an error while starting or running the session.';
+      }
+      return 'Native error: $reason';
+    }
+    if (_isConnected) {
+      if (_status.trafficSource.trim().isEmpty) {
+        return 'The connection is established in ${_status.transportMode} mode, waiting for live traffic.';
+      }
+      return 'Traffic is flowing via ${_trafficSourceLabel.toLowerCase()}. Speeds update continuously while the session remains active.';
     }
     final String? configError = _configValidationError;
     if (configError != null) {
@@ -273,7 +259,7 @@ class _DartV2rayHomePageState extends State<DartV2rayHomePage> {
         !_isStopping &&
         !_isCheckingDelay &&
         !_isConnecting &&
-        (_isConnectedEffective || configValidationError == null);
+        (_isConnected || configValidationError == null);
   }
 
   Future<void> _initialize() async {
@@ -553,22 +539,21 @@ class _DartV2rayHomePageState extends State<DartV2rayHomePage> {
     ).showSnackBar(SnackBar(content: Text(message)));
   }
 
-  void _logStatusToConsole(ConnectionStatus status) {
+  void _logStatusToConsole(VpnStatus status) {
     if (!_consoleStatusLogsEnabled) return;
     final String timestamp = DateTime.now().toIso8601String();
     debugPrint(
       '[dart_v2ray][status][$timestamp] '
-      'state=${status.state} '
-      'phase=${status.connectionPhase} '
+      'state=${status.connectionState.wireValue} '
       'mode=${status.transportMode} '
-      'processRunning=${status.isProcessRunning} '
+      'processRunning=${status.processRunning} '
       'trafficSource=${status.trafficSource} '
-      'trafficReason=${status.trafficReason} '
-      'up=${status.uploadSpeedBytesPerSecond}B/s '
-      'down=${status.downloadSpeedBytesPerSecond}B/s '
-      'upTotal=${status.uploadBytesTotal}B '
-      'downTotal=${status.downloadBytesTotal}B '
-      'duration=${status.durationSeconds}s',
+      'statusReason=${status.statusReason} '
+      'up=${status.uploadSpeedBps}B/s '
+      'down=${status.downloadSpeedBps}B/s '
+      'upTotal=${status.uploadedBytes}B '
+      'downTotal=${status.downloadedBytes}B '
+      'duration=${status.sessionSeconds}s',
     );
   }
 
@@ -666,24 +651,20 @@ class _DartV2rayHomePageState extends State<DartV2rayHomePage> {
               initialized: _initialized,
               coreVersion: _coreVersion,
               statusLabel: _humanizeState(_normalizedState),
-              rawPhase: _connectionPhase,
-              phaseLabel: _humanizeState(_connectionPhase),
               rawState: _normalizedState,
               modeSummary: _modeSummary,
               transportModeLabel: _humanizeState(_status.transportMode),
               trafficSourceLabel: _trafficSourceLabel,
-              processStateLabel: _status.isProcessRunning
+              processStateLabel: _status.processRunning
                   ? 'Running'
                   : 'Not running',
-              durationLabel: _formatDuration(_status.durationSeconds),
-              uploadLabel: _formatBytes(_status.uploadBytesTotal),
-              downloadLabel: _formatBytes(_status.downloadBytesTotal),
-              uploadSpeedLabel:
-                  '${_formatBytes(_status.uploadSpeedBytesPerSecond)}/s',
-              downloadSpeedLabel:
-                  '${_formatBytes(_status.downloadSpeedBytesPerSecond)}/s',
-              remainingAutoDisconnectSeconds:
-                  _status.remainingAutoDisconnectSeconds,
+              durationLabel: _formatDuration(_status.sessionSeconds),
+              uploadLabel: _formatBytes(_status.uploadedBytes),
+              downloadLabel: _formatBytes(_status.downloadedBytes),
+              uploadSpeedLabel: '${_formatBytes(_status.uploadSpeedBps)}/s',
+              downloadSpeedLabel: '${_formatBytes(_status.downloadSpeedBps)}/s',
+              autoDisconnectRemainingSeconds:
+                  _status.autoDisconnectRemainingSeconds,
             ),
             const SizedBox(height: 16),
             Card(
@@ -711,16 +692,14 @@ class _DartV2rayHomePageState extends State<DartV2rayHomePage> {
                           icon: Icon(
                             (_isStarting || _isConnecting)
                                 ? Icons.hourglass_bottom_rounded
-                                : (_isConnectedEffective
+                                : (_isConnected
                                       ? Icons.check_circle_rounded
                                       : Icons.play_arrow_rounded),
                           ),
                           label: Text(
                             (_isStarting || _isConnecting)
                                 ? 'Connecting...'
-                                : (_isConnectedEffective
-                                      ? 'Connected'
-                                      : 'Connect'),
+                                : (_isConnected ? 'Connected' : 'Connect'),
                           ),
                         ),
                         FilledButton.tonalIcon(
@@ -987,8 +966,6 @@ class _StatusOverviewCard extends StatelessWidget {
     required this.initialized,
     required this.coreVersion,
     required this.statusLabel,
-    required this.rawPhase,
-    required this.phaseLabel,
     required this.rawState,
     required this.modeSummary,
     required this.transportModeLabel,
@@ -999,7 +976,7 @@ class _StatusOverviewCard extends StatelessWidget {
     required this.downloadLabel,
     required this.uploadSpeedLabel,
     required this.downloadSpeedLabel,
-    required this.remainingAutoDisconnectSeconds,
+    required this.autoDisconnectRemainingSeconds,
   });
 
   final String headline;
@@ -1008,8 +985,6 @@ class _StatusOverviewCard extends StatelessWidget {
   final bool initialized;
   final String coreVersion;
   final String statusLabel;
-  final String rawPhase;
-  final String phaseLabel;
   final String rawState;
   final String modeSummary;
   final String transportModeLabel;
@@ -1020,26 +995,9 @@ class _StatusOverviewCard extends StatelessWidget {
   final String downloadLabel;
   final String uploadSpeedLabel;
   final String downloadSpeedLabel;
-  final int? remainingAutoDisconnectSeconds;
+  final int? autoDisconnectRemainingSeconds;
 
   Color _tone(ColorScheme scheme) {
-    switch (rawPhase) {
-      case 'ACTIVE':
-        return Colors.green;
-      case 'CONNECTING':
-      case 'VERIFYING':
-        return Colors.orange;
-      case 'READY':
-        return Colors.teal;
-      case 'CONNECTED':
-      case 'CONNECTED_IDLE':
-        return Colors.green;
-      case 'AUTO_DISCONNECTED':
-        return Colors.deepOrange;
-      default:
-        break;
-    }
-
     switch (rawState) {
       case 'CONNECTED':
         return Colors.green;
@@ -1047,26 +1005,14 @@ class _StatusOverviewCard extends StatelessWidget {
         return Colors.orange;
       case 'AUTO_DISCONNECTED':
         return Colors.deepOrange;
+      case 'ERROR':
+        return Colors.red;
       default:
         return scheme.primary;
     }
   }
 
   IconData _icon() {
-    switch (rawPhase) {
-      case 'ACTIVE':
-        return Icons.shield_rounded;
-      case 'CONNECTING':
-      case 'VERIFYING':
-        return Icons.sync_rounded;
-      case 'READY':
-        return Icons.wifi_tethering_rounded;
-      case 'AUTO_DISCONNECTED':
-        return Icons.timelapse_rounded;
-      default:
-        break;
-    }
-
     switch (rawState) {
       case 'CONNECTED':
         return Icons.shield_rounded;
@@ -1074,6 +1020,8 @@ class _StatusOverviewCard extends StatelessWidget {
         return Icons.sync_rounded;
       case 'AUTO_DISCONNECTED':
         return Icons.timelapse_rounded;
+      case 'ERROR':
+        return Icons.error_rounded;
       default:
         return Icons.wifi_tethering_off_rounded;
     }
@@ -1158,15 +1106,14 @@ class _StatusOverviewCard extends StatelessWidget {
                 ),
                 _InfoChip(label: 'Core', value: coreVersion),
                 _InfoChip(label: 'State', value: statusLabel),
-                _InfoChip(label: 'Phase', value: phaseLabel),
                 _InfoChip(label: 'Mode', value: modeSummary),
                 _InfoChip(label: 'Transport', value: transportModeLabel),
                 _InfoChip(label: 'Traffic', value: trafficSourceLabel),
                 _InfoChip(label: 'Process', value: processStateLabel),
-                if (remainingAutoDisconnectSeconds != null)
+                if (autoDisconnectRemainingSeconds != null)
                   _InfoChip(
                     label: 'Auto disconnect',
-                    value: '${remainingAutoDisconnectSeconds}s',
+                    value: '${autoDisconnectRemainingSeconds}s',
                   ),
               ],
             ),

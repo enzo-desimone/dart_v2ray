@@ -128,6 +128,11 @@ open class XrayVPNService : VpnService() {
     private fun handleStartCommand(intent: Intent) {
         val config = extractConfig(intent) ?: return stopSelf()
         val proxyOnly = intent.getBooleanExtra("PROXY_ONLY", false)
+        AppConfigs.V2RAY_CONNECTION_MODE = if (proxyOnly) {
+            AppConfigs.V2RAY_CONNECTION_MODES.PROXY_ONLY
+        } else {
+            AppConfigs.V2RAY_CONNECTION_MODES.VPN_TUN
+        }
 
         cleanup() // Ensure clean state
 
@@ -142,11 +147,8 @@ open class XrayVPNService : VpnService() {
         } else {
             val startError = XrayCoreManager.getLastStartError() ?: "Failed to start Xray Core process"
             Log.e(TAG, "Failed to start XRay Core: $startError")
-            sendBroadcast(Intent(AppConfigs.V2RAY_CONNECTION_INFO).apply {
-                putExtra("STATE", AppConfigs.V2RAY_STATES.V2RAY_DISCONNECTED)
-                putExtra("ERROR", startError)
-            })
-            stopSelf()
+            XrayCoreManager.markError(startError)
+            stopAll()
         }
     }
 
@@ -206,6 +208,7 @@ open class XrayVPNService : VpnService() {
             
         } catch (e: Exception) {
             Log.e(TAG, "Exception during VPN setup", e)
+            XrayCoreManager.markError("Exception during VPN setup: ${e.localizedMessage ?: "unknown"}")
             stopAll()
         }
     }
@@ -295,16 +298,8 @@ open class XrayVPNService : VpnService() {
         Log.e(TAG, "Cleaning up XrayCore and stopping service")
         Log.e(TAG, "=============================================")
 
-        // Send DISCONNECTED broadcast to update app UI
-        sendBroadcast(Intent(AppConfigs.V2RAY_CONNECTION_INFO).apply {
-            putExtra("STATE", AppConfigs.V2RAY_STATES.V2RAY_DISCONNECTED)
-        })
-
-        // Stop XrayCore since VPN failed
-        XrayCoreManager.stopCore(this)
-        
-        // Stop the service
-        stopSelf()
+        XrayCoreManager.markError(reason)
+        stopAll()
     }
 
     // MARK: - Tun2socks Management
@@ -316,6 +311,7 @@ open class XrayVPNService : VpnService() {
         val tun2socksExecutable = Utilities.resolveNativeExecutable(this, "libtun2socks.so")
         if (tun2socksExecutable == null || !tun2socksExecutable.exists()) {
             Log.e(TAG, "tun2socks executable could not be resolved")
+            XrayCoreManager.markError("tun2socks executable could not be resolved")
             stopAll()
             return
         }
@@ -336,6 +332,7 @@ open class XrayVPNService : VpnService() {
             sendFd()
         }.onFailure {
             Log.e(TAG, "Failed to start tun2socks", it)
+            XrayCoreManager.markError("Failed to start tun2socks: ${it.localizedMessage ?: "unknown"}")
             stopAll()
         }
     }
@@ -411,6 +408,10 @@ open class XrayVPNService : VpnService() {
                 }.onFailure {
                     if (attempt == FD_TRANSFER_MAX_RETRIES - 1) {
                         Log.e(TAG, "Failed to send FD after $FD_TRANSFER_MAX_RETRIES attempts", it)
+                        XrayCoreManager.markError(
+                            "Failed to transfer TUN descriptor to tun2socks: ${it.localizedMessage ?: "unknown"}"
+                        )
+                        stopAll()
                     }
                 }
             }
@@ -605,4 +606,3 @@ open class XrayVPNService : VpnService() {
         private const val TUN2SOCKS_START_DELAY_MS = 1000L
     }
 }
-

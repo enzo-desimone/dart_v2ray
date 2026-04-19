@@ -87,10 +87,11 @@ final report = await v2ray.buildWindowsBugReport(
 
 On Windows, use these fields for robust UX decisions:
 
-- `state`
-- `connectionPhase`
-- `isProcessRunning`
+- `connectionState`
+- `processRunning`
 - `trafficSource`
-- `trafficReason`
+- `statusReason`
 
-This helps distinguish "connected but idle" from real traffic failures.
+`connectionState` now emits one canonical value (`CONNECTING`, `CONNECTED`,
+`DISCONNECTED`, `AUTO_DISCONNECTED`, `ERROR`), while diagnostics fields help
+distinguish "connected but idle" from real traffic/runtime failures.

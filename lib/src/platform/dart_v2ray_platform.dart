@@ -1,7 +1,7 @@
 import 'package:plugin_platform_interface/plugin_platform_interface.dart';
 
 import '../models/auto_disconnect_config.dart';
-import '../models/connection_status.dart';
+import '../models/vpn_status.dart';
 import 'method_channel_dart_v2ray.dart';
 
 /// Platform interface used by the public `DartV2ray` API.
@@ -133,7 +133,7 @@ abstract class DartV2rayPlatform extends PlatformInterface {
     );
   }
 
-  /// Windows-only diagnostics fallback for connection phase, traffic source,
+  /// Windows-only diagnostics fallback for state, traffic source,
   /// process state, and counters.
   Future<Map<String, dynamic>> getWindowsTrafficDiagnostics() {
     throw UnimplementedError(
@@ -150,7 +150,7 @@ abstract class DartV2rayPlatform extends PlatformInterface {
   ///
   /// Implementations may include extended lifecycle fields in addition to
   /// base state/speed counters.
-  Stream<ConnectionStatus> get onStatusChanged {
+  Stream<VpnStatus> get onStatusChanged {
     throw UnimplementedError('onStatusChanged() has not been implemented.');
   }
 }

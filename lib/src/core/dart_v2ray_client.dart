@@ -1,5 +1,5 @@
 import '../models/auto_disconnect_config.dart';
-import '../models/connection_status.dart';
+import '../models/vpn_status.dart';
 import '../platform/dart_v2ray_platform.dart';
 import '../share_links/shadowsocks_url.dart';
 import '../share_links/socks_url.dart';
@@ -210,10 +210,9 @@ class DartV2ray {
 
   /// Native connection status stream.
   ///
-  /// Events include base traffic counters/state and, on supported platforms,
-  /// higher-level lifecycle diagnostics such as connection phase and
-  /// process health.
-  Stream<ConnectionStatus> get onStatusChanged {
+  /// Events expose a single canonical connection state plus traffic/process
+  /// diagnostics when available.
+  Stream<VpnStatus> get onStatusChanged {
     return DartV2rayPlatform.instance.onStatusChanged;
   }
 
@@ -223,12 +222,12 @@ class DartV2ray {
   }
 
   /// Broadcast status stream backed by the persistent listener.
-  Stream<ConnectionStatus> get persistentStatusStream {
+  Stream<VpnStatus> get persistentStatusStream {
     return _persistentStatusController.stream;
   }
 
   /// Last status snapshot observed by the persistent listener.
-  ConnectionStatus get latestStatus => _persistentStatusController.latestStatus;
+  VpnStatus get latestStatus => _persistentStatusController.latestStatus;
 
   /// Stops the persistent status listener.
   Future<void> stopPersistentStatusListener() {

@@ -1,36 +1,49 @@
-import '../../models/connection_status.dart';
+import '../../models/vpn_status.dart';
 
-/// Parses Windows diagnostics maps and converts them to [ConnectionStatus].
+/// Parses Windows diagnostics maps and converts them to [VpnStatus].
 class WindowsStatusFallbackMapper {
   /// Returns `true` when two status snapshots differ in user-facing fields.
-  static bool areDifferent(ConnectionStatus current, ConnectionStatus next) {
-    return current.state != next.state ||
-        current.connectionPhase != next.connectionPhase ||
+  static bool areDifferent(VpnStatus current, VpnStatus next) {
+    return current.connectionState != next.connectionState ||
         current.transportMode != next.transportMode ||
         current.trafficSource != next.trafficSource ||
-        current.trafficReason != next.trafficReason ||
-        current.isProcessRunning != next.isProcessRunning ||
-        current.durationSeconds != next.durationSeconds ||
-        current.uploadSpeedBytesPerSecond != next.uploadSpeedBytesPerSecond ||
-        current.downloadSpeedBytesPerSecond !=
-            next.downloadSpeedBytesPerSecond ||
-        current.uploadBytesTotal != next.uploadBytesTotal ||
-        current.downloadBytesTotal != next.downloadBytesTotal ||
-        current.remainingAutoDisconnectSeconds !=
-            next.remainingAutoDisconnectSeconds;
+        current.statusReason != next.statusReason ||
+        current.processRunning != next.processRunning ||
+        current.sessionSeconds != next.sessionSeconds ||
+        current.uploadSpeedBps != next.uploadSpeedBps ||
+        current.downloadSpeedBps != next.downloadSpeedBps ||
+        current.uploadedBytes != next.uploadedBytes ||
+        current.downloadedBytes != next.downloadedBytes ||
+        current.autoDisconnectRemainingSeconds !=
+            next.autoDisconnectRemainingSeconds;
   }
 
-  /// Builds a best-effort [ConnectionStatus] from a diagnostics payload.
-  static ConnectionStatus fromDiagnostics(
+  /// Builds a best-effort [VpnStatus] from a diagnostics payload.
+  static VpnStatus fromDiagnostics(
     Map<String, dynamic> diagnostics,
-    ConnectionStatus fallback,
+    VpnStatus fallback,
   ) {
-    final String state = _string(diagnostics, 'state', fallback.state);
-    final String phase = _string(
-      diagnostics,
-      'connection_phase',
-      fallback.connectionPhase.isEmpty ? state : fallback.connectionPhase,
+    final VpnConnectionState connectionState = VpnStatus.resolveState(
+      _string(diagnostics, 'state', fallback.connectionState.wireValue),
+      phaseHint: _string(
+        diagnostics,
+        'connection_phase',
+        fallback.connectionState.wireValue,
+      ),
     );
+
+    String statusReason = _string(
+      diagnostics,
+      'traffic_reason',
+      fallback.statusReason,
+    );
+    if (statusReason.isEmpty && connectionState == VpnConnectionState.error) {
+      statusReason = _string(
+        diagnostics,
+        'error_message',
+        fallback.statusReason,
+      );
+    }
 
     final String remainingRaw = _string(
       diagnostics,
@@ -38,13 +51,12 @@ class WindowsStatusFallbackMapper {
     );
     final int? remaining =
         remainingRaw.isEmpty
-            ? fallback.remainingAutoDisconnectSeconds
+            ? fallback.autoDisconnectRemainingSeconds
             : int.tryParse(remainingRaw) ??
-                fallback.remainingAutoDisconnectSeconds;
+                fallback.autoDisconnectRemainingSeconds;
 
     return fallback.copyWith(
-      state: state,
-      connectionPhase: phase,
+      connectionState: connectionState,
       transportMode: _string(
         diagnostics,
         'transport_mode',
@@ -55,42 +67,38 @@ class WindowsStatusFallbackMapper {
         'traffic_source',
         fallback.trafficSource,
       ),
-      trafficReason: _string(
-        diagnostics,
-        'traffic_reason',
-        fallback.trafficReason,
-      ),
-      isProcessRunning: _bool(
+      statusReason: statusReason,
+      processRunning: _bool(
         diagnostics,
         'xray_process_running',
-        fallback.isProcessRunning,
+        fallback.processRunning,
       ),
-      durationSeconds: _int(
+      sessionSeconds: _int(
         diagnostics,
         'duration_seconds',
-        fallback.durationSeconds,
+        fallback.sessionSeconds,
       ),
-      uploadSpeedBytesPerSecond: _int(
+      uploadSpeedBps: _int(
         diagnostics,
         'upload_speed_bps',
-        fallback.uploadSpeedBytesPerSecond,
+        fallback.uploadSpeedBps,
       ),
-      downloadSpeedBytesPerSecond: _int(
+      downloadSpeedBps: _int(
         diagnostics,
         'download_speed_bps',
-        fallback.downloadSpeedBytesPerSecond,
+        fallback.downloadSpeedBps,
       ),
-      uploadBytesTotal: _int(
+      uploadedBytes: _int(
         diagnostics,
         'upload_total_bytes',
-        fallback.uploadBytesTotal,
+        fallback.uploadedBytes,
       ),
-      downloadBytesTotal: _int(
+      downloadedBytes: _int(
         diagnostics,
         'download_total_bytes',
-        fallback.downloadBytesTotal,
+        fallback.downloadedBytes,
       ),
-      remainingAutoDisconnectSeconds: remaining,
+      autoDisconnectRemainingSeconds: remaining,
     );
   }
 

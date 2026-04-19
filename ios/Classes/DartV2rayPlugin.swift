@@ -18,6 +18,7 @@ public class DartV2rayPlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
     private var isStarting: Bool = false
     private var statusCancellable: AnyCancellable?
     private var lastStatus: String = "DISCONNECTED"
+    private var lastErrorMessage: String = ""
     
     public static func register(with registrar: FlutterPluginRegistrar) {
         let channel = FlutterMethodChannel(name: "dart_v2ray", binaryMessenger: registrar.messenger())
@@ -39,6 +40,40 @@ public class DartV2rayPlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
     public func onCancel(withArguments arguments: Any?) -> FlutterError? {
         self.eventSink = nil
         return nil
+    }
+
+    private func buildStatusPayload(
+        seconds: Int,
+        status: String,
+        remainingTime: String?
+    ) -> [Any] {
+        let normalizedStatus = status.uppercased()
+        let isRunning = normalizedStatus == "CONNECTED" || normalizedStatus == "CONNECTING"
+        let source = normalizedStatus == "CONNECTED" ? "packet_tunnel" : ""
+        let reason = normalizedStatus == "ERROR" ? lastErrorMessage : ""
+
+        return [
+            "\(seconds)",
+            "\(self.uploadSpeed)",
+            "\(self.downloadSpeed)",
+            "\(self.totalUpload)",
+            "\(self.totalDownload)",
+            normalizedStatus,
+            remainingTime ?? NSNull(),
+            normalizedStatus,
+            "tun",
+            source,
+            reason,
+            isRunning ? "true" : "false"
+        ]
+    }
+
+    private func emitStatusEvent(
+        seconds: Int = 0,
+        status: String,
+        remainingTime: String? = nil
+    ) {
+        self.eventSink?(buildStatusPayload(seconds: seconds, status: status, remainingTime: remainingTime))
     }
     
     private func startTimer() {
@@ -81,17 +116,21 @@ public class DartV2rayPlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
                         }
                         
                         await MainActor.run {
-                            self.eventSink?(["\(seconds)", "\(self.uploadSpeed)", "\(self.downloadSpeed)", "\(self.totalUpload)", "\(self.totalDownload)", status, remainingTimeStr as Any])
+                            self.emitStatusEvent(
+                                seconds: seconds,
+                                status: status,
+                                remainingTime: remainingTimeStr
+                            )
                         }
                     } catch {
                         print("Error in timer: \(error.localizedDescription)")
                         await MainActor.run {
-                            self.eventSink?(["\(seconds)", "\(self.uploadSpeed)", "\(self.downloadSpeed)", "\(self.totalUpload)", "\(self.totalDownload)", status, NSNull()])
+                            self.emitStatusEvent(seconds: seconds, status: status)
                         }
                     }
                 }
             } else {
-                self.eventSink?(["\(seconds)", "\(self.uploadSpeed)", "\(self.downloadSpeed)", "\(self.totalUpload)", "\(self.totalDownload)", status, NSNull()])
+                self.emitStatusEvent(seconds: seconds, status: status)
             }
         })
     }
@@ -205,6 +244,7 @@ public class DartV2rayPlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
         packetTunnelManager?.xrayConfig = configData
         packetTunnelManager?.dnsServers = dnsServers
         packetTunnelManager?.autoDisconnect = autoDisconnect
+        self.lastErrorMessage = ""
         
         isStarting = true
         Task {
@@ -218,6 +258,10 @@ public class DartV2rayPlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
             } catch {
                 await MainActor.run {
                     self.isStarting = false
+                    self.lastErrorMessage = "Failed to start VPN: \(error.localizedDescription)"
+                    self.lastStatus = "ERROR"
+                    self.stopTimer()
+                    self.emitStatusEvent(status: "ERROR")
                     result(FlutterError(code: "VPN_ERROR",
                                         message: "Failed to start VPN: \(error.localizedDescription)",
                                         details: nil))
@@ -287,31 +331,39 @@ public class DartV2rayPlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
         switch status {
         case .connected:
             statusString = "CONNECTED"
+            self.lastErrorMessage = ""
             if timer == nil {
                 startTimer()
             }
         case .connecting:
             statusString = "CONNECTING"
+            self.lastErrorMessage = ""
             if timer == nil {
                 startTimer()
             }
         case .disconnecting:
-            statusString = "DISCONNECTING"
-            if timer == nil {
-                startTimer()
-            }
+            statusString = "DISCONNECTED"
+            stopTimer()
+            self.lastErrorMessage = ""
+            self.emitStatusEvent(status: statusString)
         case .disconnected, .invalid:
             stopTimer()
             // Use AutoDisconnectHelper to check and handle auto-disconnect
             let adjustedStatus = AutoDisconnectHelper.shared.checkAndHandleDisconnect(currentStatus: "DISCONNECTED")
             statusString = adjustedStatus
-            
-            // Send event to Flutter
-            self.eventSink?(["0", "0", "0", "0", "0", statusString, NSNull()])
+            self.lastErrorMessage = ""
+            self.emitStatusEvent(status: statusString)
         case .reasserting:
             statusString = "CONNECTING"
+            self.lastErrorMessage = ""
+            if timer == nil {
+                startTimer()
+            }
+            self.emitStatusEvent(status: statusString)
         @unknown default:
-            statusString = "DISCONNECTED"
+            statusString = "ERROR"
+            self.lastErrorMessage = "Unknown NEVPNStatus value"
+            self.emitStatusEvent(status: statusString)
         }
         
         self.lastStatus = statusString
@@ -344,4 +396,3 @@ public class DartV2rayPlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
         AutoDisconnectHelper.shared.handleGetTimestamp(result: result)
     }
 }
-

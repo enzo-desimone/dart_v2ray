@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
-import '../../models/connection_status.dart';
+import '../../models/vpn_status.dart';
 import 'windows_status_fallback_mapper.dart';
 
 /// Maintains a persistent connection-status stream independent from UI listeners.
@@ -15,26 +15,26 @@ class PersistentStatusController {
   });
 
   /// Factory for the native status stream.
-  final Stream<ConnectionStatus> Function() statusStreamFactory;
+  final Stream<VpnStatus> Function() statusStreamFactory;
 
   /// Windows-only diagnostics fetcher used as stale-stream fallback.
   final Future<Map<String, dynamic>> Function() windowsDiagnosticsFetcher;
 
-  StreamSubscription<ConnectionStatus>? _nativeStatusSubscription;
+  StreamSubscription<VpnStatus>? _nativeStatusSubscription;
   Timer? _windowsStatusFallbackTimer;
   DateTime? _lastNativeStatusAt;
   bool _windowsStatusFallbackPollInFlight = false;
 
-  final StreamController<ConnectionStatus> _statusController =
-      StreamController<ConnectionStatus>.broadcast();
+  final StreamController<VpnStatus> _statusController =
+      StreamController<VpnStatus>.broadcast();
 
-  ConnectionStatus _latestStatus = const ConnectionStatus();
+  VpnStatus _latestStatus = const VpnStatus();
 
   /// Last status snapshot observed by this controller.
-  ConnectionStatus get latestStatus => _latestStatus;
+  VpnStatus get latestStatus => _latestStatus;
 
   /// Broadcast status stream. Starts listening lazily on first access.
-  Stream<ConnectionStatus> get stream {
+  Stream<VpnStatus> get stream {
     start();
     return _statusController.stream;
   }
@@ -69,7 +69,7 @@ class PersistentStatusController {
     }
   }
 
-  void _emitStatus(ConnectionStatus status) {
+  void _emitStatus(VpnStatus status) {
     _latestStatus = status;
     if (!_statusController.isClosed) {
       _statusController.add(status);
@@ -98,7 +98,7 @@ class PersistentStatusController {
           return;
         }
 
-        final ConnectionStatus fromDiagnostics =
+        final VpnStatus fromDiagnostics =
             WindowsStatusFallbackMapper.fromDiagnostics(
               diagnostics,
               _latestStatus,
@@ -113,9 +113,8 @@ class PersistentStatusController {
           fromDiagnostics,
         );
         final bool coreConnectionMismatch =
-            _latestStatus.state != fromDiagnostics.state ||
-            _latestStatus.connectionPhase != fromDiagnostics.connectionPhase ||
-            _latestStatus.isProcessRunning != fromDiagnostics.isProcessRunning;
+            _latestStatus.connectionState != fromDiagnostics.connectionState ||
+            _latestStatus.processRunning != fromDiagnostics.processRunning;
 
         if (statusChanged && (streamLooksStale || coreConnectionMismatch)) {
           _emitStatus(fromDiagnostics);

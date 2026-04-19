@@ -2,7 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
 import '../models/auto_disconnect_config.dart';
-import '../models/connection_status.dart';
+import '../models/vpn_status.dart';
 import 'dart_v2ray_platform.dart';
 import 'status_event_parser.dart';
 
@@ -209,7 +209,7 @@ class MethodChannelDartV2ray extends DartV2rayPlatform {
   }
 
   @override
-  Stream<ConnectionStatus> get onStatusChanged {
+  Stream<VpnStatus> get onStatusChanged {
     return eventChannel.receiveBroadcastStream().map(StatusEventParser.parse);
   }
 }

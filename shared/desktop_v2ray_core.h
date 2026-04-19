@@ -75,6 +75,7 @@ class DesktopV2rayCore {
 
   std::string state_ = "DISCONNECTED";
   std::string transport_mode_ = "idle";
+  std::string last_error_message_;
   std::chrono::steady_clock::time_point connected_at_;
   std::optional<std::chrono::steady_clock::time_point> auto_disconnect_deadline_;
   bool auto_disconnected_ = false;
