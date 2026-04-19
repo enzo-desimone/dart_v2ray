@@ -148,6 +148,7 @@ final class PacketTunnelManager: ObservableObject {
             try manager.connection.startVPNTunnel()
         } catch {
             print("Failed to start VPN tunnel: \(error.localizedDescription)")
+            throw error
         }
     }
     
@@ -216,4 +217,3 @@ final class PacketTunnelManager: ObservableObject {
         }
     }
 }
-
