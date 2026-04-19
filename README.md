@@ -1,18 +1,28 @@
 # dart_v2ray
 
 `dart_v2ray` is a Flutter plugin to manage Xray/V2Ray connections from Dart.
-It supports proxy/VPN workflows, runtime status streaming, auto-disconnect, and
-share-link parsing (`vless://`, `vmess://`, `trojan://`, `ss://`, `socks://`).
+It supports proxy and VPN workflows, runtime status streaming,
+auto-disconnect, and share-link parsing (`vless://`, `vmess://`, `trojan://`,
+`ss://`, `socks://`).
 
-## Platform Status
+## What You Get
 
-| Platform | Plugin implementation | Notes |
-| --- | --- | --- |
-| Android | Available | Production-ready; tested by project team |
-| iOS | Available | Requires Packet Tunnel setup and XCFramework source |
-| Windows | Available | Production-ready; tested by project team |
-| Linux | Available | Desktop support via shared native core (not yet fully team-validated) |
-| macOS | Available | Proxy mode via desktop core; full-tunnel via Packet Tunnel setup |
+- Single high-level API: `DartV2ray`.
+- Cross-platform support for Android, iOS, Windows, Linux, and macOS.
+- Runtime connection status stream (`onStatusChanged`) plus persistent listener.
+- Auto-disconnect timer controls.
+- Windows diagnostics and bug-report builder helpers.
+- Share-link parsing into full Xray JSON configs.
+
+## Platform Matrix
+
+| Platform | Plugin Status | Runtime Source | Native Setup Summary |
+| --- | --- | --- | --- |
+| Android | Available, tested | Bundled (`arm64-v8a`, `armeabi-v7a`) | VPN permission flow (`requestPermission`) |
+| iOS | Available | `XRay.xcframework` auto-download at `pod install` (override supported) | Packet Tunnel target + App Group + matching identifiers |
+| Windows | Available, tested | Auto-download `Xray-windows-64.zip` at CMake configure | Run as Administrator for TUN workflows |
+| Linux | Available (not fully team-validated) | Runtime binaries must be reachable in deployment | Environment/package permissions depend on distro |
+| macOS | Available | Auto-download runtime (`xray`, `geoip.dat`, `geosite.dat`) at `pod install` | Proxy mode minimal; TUN needs Packet Tunnel + App Group + `Tun2SocksKit` |
 
 ## Installation
 
@@ -20,8 +30,6 @@ share-link parsing (`vless://`, `vmess://`, `trojan://`, `ss://`, `socks://`).
 dependencies:
   dart_v2ray: ^0.1.0
 ```
-
-Then run:
 
 ```bash
 flutter pub get
@@ -51,10 +59,13 @@ Future<void> connect(String configJson) async {
 }
 ```
 
-`requireTun: true` requires full-device/system TUN mode.
-`requireTun: false` runs proxy-only mode.
+`requireTun` behavior:
+- Android, Windows, Linux, macOS:
+  `true` requests TUN mode, `false` keeps proxy-only mode.
+- iOS:
+  Packet Tunnel extension flow is used (no proxy-only switch today).
 
-## Core API
+## API Overview
 
 Main class:
 - `DartV2ray`
@@ -65,10 +76,12 @@ Connection lifecycle:
 - `start(...)`
 - `stop()`
 
-Diagnostics and utilities:
+Network diagnostics:
 - `getServerDelay(...)`
 - `getConnectedServerDelay(...)`
 - `getCoreVersion()`
+
+Windows diagnostics:
 - `configureWindowsDebugLogging(...)`
 - `getWindowsTrafficDiagnostics()`
 - `getWindowsDebugLogs(...)`
@@ -82,7 +95,7 @@ Auto-disconnect:
 - `clearAutoDisconnectFlag()`
 - `getAutoDisconnectTimestamp()`
 
-Status streaming:
+Status stream:
 - `onStatusChanged`
 - `startPersistentStatusListener()`
 - `persistentStatusStream`
@@ -90,41 +103,50 @@ Status streaming:
 - `stopPersistentStatusListener()`
 - `dispose()`
 
-Models:
-- `ConnectionStatus`
-- `AutoDisconnectConfig`
-- `AutoDisconnectExpireBehavior`
-- `AutoDisconnectTimeFormat`
-
-Share-link parsers:
-- `V2rayUrl`
-- `VlessUrl`
-- `VmessUrl`
-- `TrojanUrl`
-- `ShadowsocksUrl`
-- `SocksUrl`
-
-## Share-Link Parsing
+Share-link parsing:
 
 ```dart
 final V2rayUrl parsed = DartV2ray.parseShareLink(link);
 final String configJson = parsed.getFullConfiguration();
 ```
 
-## Project Structure
+## Native Setup Checklist
 
-The Dart layer is now organized by responsibility:
+Android:
+- Call `requestPermission()` before `start(...)`.
+- If you test on emulator, prefer ARM images unless you bundle x86/x64 libs.
 
-- `lib/dart_v2ray.dart`: single public export surface.
-- `lib/src/core`: high-level client logic, validation, status manager, bug report builder.
-- `lib/src/platform`: platform interface + method-channel implementation.
-- `lib/src/models`: public data models.
-- `lib/src/share_links`: share-link parsing and config generation.
-- `lib/url`: backward-compatible exports to the new share-link paths.
+iOS:
+- Add Packet Tunnel Network Extension target.
+- Configure a shared App Group for app + extension.
+- Pass matching `providerBundleIdentifier` and `groupIdentifier` to
+  `initialize(...)`.
+- `XRay.xcframework` is downloaded automatically by default at `pod install`.
+  You can override source/hash with `DART_V2RAY_IOS_FRAMEWORK_*`.
 
-## Platform Guides
+Windows:
+- App should run with Administrator privileges for TUN/VPN flows.
+- Runtime is downloaded automatically by default and bundled as:
+  `xray.exe`, `wintun.dll`, `geoip.dat`, `geosite.dat`.
+- You can override source/hash with `DART_V2RAY_WINDOWS_XRAY_*` and
+  `DART_V2RAY_XRAY_VERSION`.
 
-Detailed per-platform setup lives in:
+Linux:
+- Ensure Xray runtime binaries/libraries are reachable in your final package.
+- For `requireTun: true`, extra capabilities/permissions may be needed
+  depending on distro/package format.
+
+macOS:
+- For proxy mode (`requireTun: false`), runtime files are auto-downloaded
+  during `pod install`.
+- For TUN mode (`requireTun: true`), add Packet Tunnel extension,
+  configure shared App Group, and link `Tun2SocksKit` to extension target.
+- Ensure extension target includes `xray`, `geoip.dat`, `geosite.dat`
+  in extension resources.
+- Runtime source/hash can be overridden with `DART_V2RAY_MACOS_XRAY_*` and
+  `DART_V2RAY_XRAY_VERSION`.
+
+## Documentation Hub
 
 - [Documentation Index](docs/README.md)
 - [Android Guide](docs/platforms/android/README.md)
@@ -132,6 +154,21 @@ Detailed per-platform setup lives in:
 - [Windows Guide](docs/platforms/windows/README.md)
 - [Linux Guide](docs/platforms/linux/README.md)
 - [macOS Guide](docs/platforms/macos/README.md)
+
+Recommended reading order:
+1. Start from this README for the global API and cross-platform overview.
+2. Open the guide for each target platform you ship.
+3. Keep per-platform setup isolated in your app repository
+   (entitlements, extension targets, signing) to avoid cross-platform mixups.
+
+## Project Structure
+
+- `lib/dart_v2ray.dart`: public export surface.
+- `lib/src/core`: high-level client, validation, status control, bug report.
+- `lib/src/platform`: platform interface and method-channel implementation.
+- `lib/src/models`: public data models.
+- `lib/src/share_links`: share-link parsing and config generation.
+- `lib/url`: backward-compatible exports for share-link types.
 
 ## Development
 

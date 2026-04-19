@@ -10,9 +10,30 @@ This guide covers Windows-specific setup for `dart_v2ray`.
 ## Requirements
 
 - Run app with Administrator privileges for VPN/TUN workflows.
-- Provide `xray.exe` (for bundled distribution, place it in
-  `windows/bin/xray.exe` inside the plugin package).
-- Provide `wintun.dll` only if you need TUN mode.
+- No manual runtime download is required by default.
+  The plugin automatically downloads `Xray-windows-64.zip` at CMake configure
+  time, verifies SHA256 (from `.dgst` when available), and bundles:
+  - `xray.exe`
+  - `wintun.dll`
+  - `geoip.dat`
+  - `geosite.dat`
+
+## Runtime Source Overrides (Optional)
+
+If your CI/build is offline or you need a pinned mirror, configure one of these:
+
+- `DART_V2RAY_WINDOWS_XRAY_ZIP_PATH`:
+  local path to `Xray-windows-64.zip`.
+- `DART_V2RAY_WINDOWS_XRAY_ZIP_URL`:
+  custom hosted zip URL.
+- `DART_V2RAY_WINDOWS_XRAY_DGST_URL`:
+  custom `.dgst` URL.
+- `DART_V2RAY_WINDOWS_XRAY_ZIP_SHA256`:
+  explicit SHA256 (overrides `.dgst` lookup).
+- `DART_V2RAY_XRAY_VERSION`:
+  release tag used by the default URL.
+
+You can set these as environment variables or CMake cache variables.
 
 ## Runtime Configuration
 

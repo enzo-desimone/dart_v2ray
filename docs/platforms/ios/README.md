@@ -26,6 +26,22 @@ await v2ray.initialize(
 `providerBundleIdentifier` and `groupIdentifier` must match your native iOS
 provisioning setup.
 
+## Start
+
+```dart
+await v2ray.start(
+  remark: 'iOS profile',
+  config: configJson,
+  requireTun: true,
+);
+```
+
+## Connection Mode
+
+- iOS uses the Packet Tunnel extension flow.
+- `requireTun` is accepted by the Dart API for consistency, but iOS currently
+  runs through the extension path (no proxy-only switch).
+
 ## Framework Source
 
 By default, the plugin downloads this hosted archive and verifies it with SHA256:

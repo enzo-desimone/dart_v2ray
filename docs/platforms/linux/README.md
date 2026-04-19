@@ -21,8 +21,15 @@ await v2ray.initialize();
 await v2ray.start(
   remark: 'Linux profile',
   config: configJson,
+  requireTun: false,
 );
 ```
+
+## Runtime Configuration
+
+- `requireTun: false`: proxy-only mode (default).
+- `requireTun: true`: requests TUN routing through the native core. Depending
+  on your distro/environment, this may require extra privileges/capabilities.
 
 ## Notes
 
