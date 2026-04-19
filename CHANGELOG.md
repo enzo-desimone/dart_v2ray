@@ -31,6 +31,7 @@
   SHA256 verification, while still allowing environment-variable overrides.
 - Added native macOS plugin registration and implementation reusing the shared
   desktop core (`macos/`), including status stream and auto-disconnect methods.
+- macOS podspec no longer auto-downloads Xray runtime archives; runtime files are now expected to be provided manually (or via `DART_V2RAY_MACOS_RUNTIME_DIR`).
 
 ## 0.1.0
 

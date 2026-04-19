@@ -11,28 +11,29 @@ This guide covers macOS-specific setup for `dart_v2ray`.
 ## Requirements
 
 - Flutter desktop app with macOS enabled.
-- No manual runtime download is required for default proxy mode.
-  During `pod install`, the plugin downloads Xray runtime files and bundles:
-  - `xray`
-  - `geoip.dat`
-  - `geosite.dat`
+- Runtime files are required manually for every build:
+  - `macos/bin/xray`
+  - `macos/bin/geoip.dat`
+  - `macos/bin/geosite.dat`
+- Optional: set `DART_V2RAY_MACOS_RUNTIME_DIR` to a folder containing
+  `xray`, `geoip.dat`, and `geosite.dat`; the podspec copies them into
+  `macos/bin` during `pod install`.
 - For full-tunnel (`requireTun: true`), complete the native setup below.
 
-## Runtime Source Overrides (Optional)
+## Runtime Setup (Manual)
 
-If your CI/build is offline or you need a pinned mirror, configure:
+`dart_v2ray` no longer downloads macOS runtime archives automatically.
 
-- `DART_V2RAY_XRAY_VERSION`:
-  release tag used by default URLs.
-- `DART_V2RAY_MACOS_XRAY_ARM64_ZIP_PATH` /
-  `DART_V2RAY_MACOS_XRAY_AMD64_ZIP_PATH`:
-  local zip archives.
-- `DART_V2RAY_MACOS_XRAY_ARM64_URL` /
-  `DART_V2RAY_MACOS_XRAY_AMD64_URL`:
-  custom hosted URLs.
-- `DART_V2RAY_MACOS_XRAY_ARM64_SHA256` /
-  `DART_V2RAY_MACOS_XRAY_AMD64_SHA256`:
-  explicit checksum pins.
+Choose one setup strategy before `pod install`:
+
+1. **Commit/copy files directly into plugin path**
+   - Place `xray`, `geoip.dat`, `geosite.dat` in `macos/bin/`.
+2. **Provide an external folder at install time**
+   - Export `DART_V2RAY_MACOS_RUNTIME_DIR=/absolute/path/to/runtime`.
+   - The folder must contain `xray`, `geoip.dat`, `geosite.dat`.
+
+If required files are missing, `pod install` fails with a clear error to avoid
+incomplete app/extension bundles.
 
 ## Required Native Setup (`requireTun: true`)
 
@@ -120,7 +121,7 @@ await v2ray.start(
 ## Troubleshooting
 
 - `initialize` / `start` fails:
-  - Ensure `pod install` completed and downloaded runtime files.
+  - Ensure runtime files are present (`macos/bin/*`) or `DART_V2RAY_MACOS_RUNTIME_DIR` is set before `pod install`.
   - Ensure the binary exists and is executable.
   - Verify discovery from terminal (`which xray`) or set
     `XRAY_EXECUTABLE=/absolute/path/to/xray`.
