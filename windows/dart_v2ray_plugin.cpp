@@ -273,10 +273,14 @@ void DartV2rayPlugin::HandleMethodCall(
 
     const std::string error = core_.Start(std::get<std::string>(config_it->second), options);
     if (!error.empty()) {
+      // Publish immediate ERROR/terminal snapshot instead of waiting for timer tick.
+      PublishStatus();
       result->Error("start_failed", error);
       return;
     }
 
+    // Publish immediate CONNECTING/CONNECTED snapshot instead of waiting for timer tick.
+    PublishStatus();
     result->Success();
     return;
   }
@@ -287,6 +291,8 @@ void DartV2rayPlugin::HandleMethodCall(
       result->Error("stop_failed", error);
       return;
     }
+    // Publish immediate DISCONNECTED/AUTO_DISCONNECTED snapshot.
+    PublishStatus();
     result->Success();
     return;
   }

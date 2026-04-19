@@ -335,12 +335,14 @@ public class DartV2rayPlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
             if timer == nil {
                 startTimer()
             }
+            self.emitStatusEvent(status: statusString)
         case .connecting:
             statusString = "CONNECTING"
             self.lastErrorMessage = ""
             if timer == nil {
                 startTimer()
             }
+            self.emitStatusEvent(status: statusString)
         case .disconnecting:
             statusString = "DISCONNECTED"
             stopTimer()

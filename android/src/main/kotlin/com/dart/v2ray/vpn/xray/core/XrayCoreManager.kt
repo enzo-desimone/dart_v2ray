@@ -73,6 +73,7 @@ object XrayCoreManager {
         AppConfigs.V2RAY_STATE = AppConfigs.V2RAY_STATES.V2RAY_CONNECTING
         AppConfigs.V2RAY_CONFIG = config
         lastStartError = null
+        emitImmediateStatusBroadcast(context)
 
         return runCatching {
             val configFile = prepareConfigurationFile(context, config)
@@ -105,6 +106,7 @@ object XrayCoreManager {
         Log.d(TAG, "VPN interface established, transitioning to CONNECTED state")
         
         AppConfigs.V2RAY_STATE = AppConfigs.V2RAY_STATES.V2RAY_CONNECTED
+        emitImmediateStatusBroadcast(context)
         
         val config = AppConfigs.V2RAY_CONFIG
         if (config != null) {
@@ -437,6 +439,10 @@ object XrayCoreManager {
                 putExtra("REMAINING_TIME", remainingAutoDisconnectSeconds.toString())
             }
         }.also { context.sendBroadcast(it) }
+    }
+
+    private fun emitImmediateStatusBroadcast(context: Context) {
+        broadcastConnectionStatus(context, ZERO_TRAFFIC)
     }
 
     private fun sampleTrafficIfNeeded(context: Context): LongArray {
