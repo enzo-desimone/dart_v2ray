@@ -177,6 +177,27 @@ static NSInteger ParseIntegerString(NSString* value, NSInteger fallback_value) {
   return parsed;
 }
 
+static NSString* DesktopPluginLogPath() {
+  return [NSTemporaryDirectory() stringByAppendingPathComponent:@"dart_v2ray_macos.log"];
+}
+
+static NSString* ReadTextTail(NSString* path, NSInteger max_bytes) {
+  if (path.length == 0) {
+    return @"";
+  }
+
+  NSData* data = [NSData dataWithContentsOfFile:path];
+  if (data == nil || data.length == 0) {
+    return @"";
+  }
+
+  const NSUInteger bounded = (NSUInteger)MAX(1024, MIN(max_bytes, 262144));
+  const NSUInteger start = data.length > bounded ? data.length - bounded : 0;
+  NSData* tail = [data subdataWithRange:NSMakeRange(start, data.length - start)];
+  NSString* text = [[NSString alloc] initWithData:tail encoding:NSUTF8StringEncoding];
+  return text != nil ? text : @"";
+}
+
 @interface DartV2rayPlugin () <FlutterStreamHandler> {
   std::unique_ptr<DesktopV2rayCore> _core;
   FlutterEventSink _statusSink;
@@ -230,6 +251,8 @@ static NSInteger ParseIntegerString(NSString* value, NSInteger fallback_value) {
                                                    reason:(NSString*)reason;
 - (void)resetPacketTunnelCounters;
 - (void)emitPacketTunnelError:(NSString*)reason;
+- (void)appendDesktopPluginLog:(NSString*)message;
+- (NSDictionary*)buildDesktopDebugLogs:(int)maxBytes;
 
 @end
 
@@ -290,6 +313,7 @@ static NSInteger ParseIntegerString(NSString* value, NSInteger fallback_value) {
 
 - (void)handleMethodCall:(FlutterMethodCall*)call result:(FlutterResult)result {
   NSString* method = call.method;
+  [self appendDesktopPluginLog:[NSString stringWithFormat:@"method_call: %@", method]];
   NSDictionary* args = [call.arguments isKindOfClass:[NSDictionary class]]
                             ? (NSDictionary*)call.arguments
                             : nil;
@@ -501,17 +525,67 @@ static NSInteger ParseIntegerString(NSString* value, NSInteger fallback_value) {
     return;
   }
 
-  if ([method isEqualToString:@"getWindowsDebugLogs"]) {
+  if ([method isEqualToString:@"getDesktopDebugLogs"]) {
     int max_bytes = 16384;
     id value = args[@"max_bytes"];
     if ([value isKindOfClass:[NSNumber class]]) {
       max_bytes = [(NSNumber*)value intValue];
     }
-    result(ConvertStringMapToNSDictionary(_core->GetWindowsDebugLogs(max_bytes)));
+    result([self buildDesktopDebugLogs:max_bytes]);
     return;
   }
 
   result(FlutterMethodNotImplemented);
+}
+
+- (void)appendDesktopPluginLog:(NSString*)message {
+  if (![message isKindOfClass:[NSString class]] || message.length == 0) {
+    return;
+  }
+
+  NSString* timestamp = [[NSDate date] description];
+  NSString* line = [NSString stringWithFormat:@"[%@] %@\n", timestamp, message];
+  NSData* data = [line dataUsingEncoding:NSUTF8StringEncoding];
+  if (data == nil) {
+    return;
+  }
+
+  NSString* path = DesktopPluginLogPath();
+  NSFileManager* fm = [NSFileManager defaultManager];
+  if (![fm fileExistsAtPath:path]) {
+    [data writeToFile:path atomically:YES];
+    return;
+  }
+
+  NSFileHandle* handle = [NSFileHandle fileHandleForWritingAtPath:path];
+  if (handle == nil) {
+    [data writeToFile:path atomically:YES];
+    return;
+  }
+
+  @try {
+    [handle seekToEndOfFile];
+    [handle writeData:data];
+  } @finally {
+    [handle closeFile];
+  }
+}
+
+- (NSDictionary*)buildDesktopDebugLogs:(int)maxBytes {
+  NSMutableDictionary* payload = [NSMutableDictionary dictionary];
+  NSString* pluginPath = DesktopPluginLogPath();
+  BOOL exists = [[NSFileManager defaultManager] fileExistsAtPath:pluginPath];
+
+  payload[@"supported"] = @(YES);
+  payload[@"platform"] = @"macos";
+  payload[@"max_bytes"] = @((int)MAX(1024, MIN(maxBytes, 262144)));
+  payload[@"plugin_log_path"] = pluginPath;
+  payload[@"plugin_log_exists"] = @(exists);
+  payload[@"plugin_log_tail"] = ReadTextTail(pluginPath, maxBytes);
+  payload[@"xray_log_path"] = @"";
+  payload[@"xray_log_exists"] = @(NO);
+  payload[@"xray_log_tail"] = @"";
+  return payload;
 }
 
 - (void)configureFromInitializeArgs:(NSDictionary*)args {

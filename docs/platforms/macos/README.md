@@ -113,8 +113,8 @@ await v2ray.start(
   - `requireTun: false`: shared desktop native core.
   - `requireTun: true`: Packet Tunnel (`NETunnelProviderManager`).
 - `onStatusChanged` emits the same payload contract used by desktop targets.
-- Windows-only diagnostics methods remain callable and return
-  `{"supported":"false","reason":"windows_only"}` on macOS.
+- `getDesktopDebugLogs()` is available on macOS and returns plugin-log metadata
+  and tail content from a temp file for diagnostics sharing.
 - Full-tunnel behavior depends on your macOS signing/entitlements distribution
   setup for Network Extension + App Group.
 

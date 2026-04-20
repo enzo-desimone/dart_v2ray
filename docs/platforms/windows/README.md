@@ -72,7 +72,7 @@ Equivalent environment variables:
 Read logs:
 
 ```dart
-final logs = await v2ray.getWindowsDebugLogs();
+final logs = await v2ray.getDesktopDebugLogs();
 ```
 
 Build a report payload:

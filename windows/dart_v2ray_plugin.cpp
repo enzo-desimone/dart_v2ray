@@ -374,7 +374,7 @@ void DartV2rayPlugin::HandleMethodCall(
     return;
   }
 
-  if (method_name == "getWindowsDebugLogs") {
+  if (method_name == "getDesktopDebugLogs") {
     const auto* args = std::get_if<flutter::EncodableMap>(method_call.arguments());
     const int max_bytes = args != nullptr ? ExtractInt(*args, "max_bytes", 16384) : 16384;
     core_.PollProcessAndHandleExit();

@@ -157,9 +157,9 @@ class DartV2ray {
     return DartV2rayPlatform.instance.getWindowsTrafficDiagnostics();
   }
 
-  /// Returns Windows-only plugin/xray log tails.
-  Future<Map<String, dynamic>> getWindowsDebugLogs({int maxBytes = 16384}) {
-    return DartV2rayPlatform.instance.getWindowsDebugLogs(maxBytes: maxBytes);
+  /// Returns desktop plugin/xray log tails when available.
+  Future<Map<String, dynamic>> getDesktopDebugLogs({int maxBytes = 16384}) {
+    return DartV2rayPlatform.instance.getDesktopDebugLogs(maxBytes: maxBytes);
   }
 
   /// Builds a Windows bug-report payload ready to send to your backend/API.
@@ -179,7 +179,7 @@ class DartV2ray {
   }) {
     return WindowsBugReportBuilder.build(
       debugLogsFetcher:
-          ({int maxBytes = 16384}) => getWindowsDebugLogs(maxBytes: maxBytes),
+          ({int maxBytes = 16384}) => getDesktopDebugLogs(maxBytes: maxBytes),
       latestStatus: latestStatus,
       tailMaxBytes: tailMaxBytes,
       includeLatestStatus: includeLatestStatus,
