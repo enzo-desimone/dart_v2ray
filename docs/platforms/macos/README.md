@@ -115,6 +115,9 @@ await v2ray.start(
 - `onStatusChanged` emits the same payload contract used by desktop targets.
 - `getDesktopDebugLogs()` is available on macOS and returns plugin-log metadata
   and tail content from a temp file for diagnostics sharing.
+- If your Xray JSON includes `log.access` and/or `log.error` file paths,
+  `getDesktopDebugLogs()` also returns detected Xray log paths and tail content
+  from those files.
 - Full-tunnel behavior depends on your macOS signing/entitlements distribution
   setup for Network Extension + App Group.
 

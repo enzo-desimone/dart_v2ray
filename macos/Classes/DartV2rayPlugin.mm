@@ -198,6 +198,65 @@ static NSString* ReadTextTail(NSString* path, NSInteger max_bytes) {
   return text != nil ? text : @"";
 }
 
+static NSString* NormalizeLogFilePath(NSString* raw_path) {
+  if (![raw_path isKindOfClass:[NSString class]]) {
+    return nil;
+  }
+
+  NSString* trimmed =
+      [raw_path stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+  if (trimmed.length == 0) {
+    return nil;
+  }
+
+  NSString* expanded = [trimmed stringByExpandingTildeInPath];
+  if ([expanded isAbsolutePath]) {
+    return [expanded stringByStandardizingPath];
+  }
+
+  NSString* cwd = [[NSFileManager defaultManager] currentDirectoryPath];
+  NSString* resolved = [cwd stringByAppendingPathComponent:expanded];
+  return [resolved stringByStandardizingPath];
+}
+
+static NSDictionary<NSString*, NSString*>* ExtractXrayLogPathsFromConfig(NSString* config_json) {
+  if (![config_json isKindOfClass:[NSString class]] || config_json.length == 0) {
+    return @{};
+  }
+
+  NSData* data = [config_json dataUsingEncoding:NSUTF8StringEncoding];
+  if (data == nil || data.length == 0) {
+    return @{};
+  }
+
+  NSError* error = nil;
+  id root = [NSJSONSerialization JSONObjectWithData:data options:0 error:&error];
+  if (error != nil || ![root isKindOfClass:[NSDictionary class]]) {
+    return @{};
+  }
+
+  NSDictionary* root_dict = (NSDictionary*)root;
+  id log_value = root_dict[@"log"];
+  if (![log_value isKindOfClass:[NSDictionary class]]) {
+    return @{};
+  }
+
+  NSDictionary* log_dict = (NSDictionary*)log_value;
+  NSMutableDictionary<NSString*, NSString*>* result = [NSMutableDictionary dictionary];
+
+  NSString* access = NormalizeLogFilePath(log_dict[@"access"]);
+  if (access != nil) {
+    result[@"access"] = access;
+  }
+
+  NSString* error_path = NormalizeLogFilePath(log_dict[@"error"]);
+  if (error_path != nil) {
+    result[@"error"] = error_path;
+  }
+
+  return result;
+}
+
 @interface DartV2rayPlugin () <FlutterStreamHandler> {
   std::unique_ptr<DesktopV2rayCore> _core;
   FlutterEventSink _statusSink;
@@ -218,6 +277,8 @@ static NSString* ReadTextTail(NSString* path, NSInteger max_bytes) {
   uint64_t _packetUploadSpeed;
   uint64_t _packetDownloadSpeed;
   NSString* _packetLastErrorReason;
+  NSString* _xrayAccessLogPath;
+  NSString* _xrayErrorLogPath;
 }
 
 - (void)configureFromInitializeArgs:(NSDictionary*)args;
@@ -252,6 +313,7 @@ static NSString* ReadTextTail(NSString* path, NSInteger max_bytes) {
 - (void)resetPacketTunnelCounters;
 - (void)emitPacketTunnelError:(NSString*)reason;
 - (void)appendDesktopPluginLog:(NSString*)message;
+- (void)updateTrackedXrayLogPathsFromConfig:(NSString*)config;
 - (NSDictionary*)buildDesktopDebugLogs:(int)maxBytes;
 
 @end
@@ -293,6 +355,8 @@ static NSString* ReadTextTail(NSString* path, NSInteger max_bytes) {
     _packetUploadSpeed = 0;
     _packetDownloadSpeed = 0;
     _packetLastErrorReason = nil;
+    _xrayAccessLogPath = nil;
+    _xrayErrorLogPath = nil;
   }
   return self;
 }
@@ -574,7 +638,30 @@ static NSString* ReadTextTail(NSString* path, NSInteger max_bytes) {
 - (NSDictionary*)buildDesktopDebugLogs:(int)maxBytes {
   NSMutableDictionary* payload = [NSMutableDictionary dictionary];
   NSString* pluginPath = DesktopPluginLogPath();
-  BOOL exists = [[NSFileManager defaultManager] fileExistsAtPath:pluginPath];
+  NSFileManager* fm = [NSFileManager defaultManager];
+  BOOL exists = [fm fileExistsAtPath:pluginPath];
+
+  NSString* accessPath = _xrayAccessLogPath ?: @"";
+  NSString* errorPath = _xrayErrorLogPath ?: @"";
+  BOOL accessExists = accessPath.length > 0 && [fm fileExistsAtPath:accessPath];
+  BOOL errorExists = errorPath.length > 0 && [fm fileExistsAtPath:errorPath];
+
+  NSString* selectedXrayPath = @"";
+  NSString* selectedXrayKind = @"none";
+  if (errorExists) {
+    selectedXrayPath = errorPath;
+    selectedXrayKind = @"error";
+  } else if (accessExists) {
+    selectedXrayPath = accessPath;
+    selectedXrayKind = @"access";
+  } else if (errorPath.length > 0) {
+    selectedXrayPath = errorPath;
+    selectedXrayKind = @"error";
+  } else if (accessPath.length > 0) {
+    selectedXrayPath = accessPath;
+    selectedXrayKind = @"access";
+  }
+  BOOL selectedXrayExists = selectedXrayPath.length > 0 && [fm fileExistsAtPath:selectedXrayPath];
 
   payload[@"supported"] = @(YES);
   payload[@"platform"] = @"macos";
@@ -582,10 +669,43 @@ static NSString* ReadTextTail(NSString* path, NSInteger max_bytes) {
   payload[@"plugin_log_path"] = pluginPath;
   payload[@"plugin_log_exists"] = @(exists);
   payload[@"plugin_log_tail"] = ReadTextTail(pluginPath, maxBytes);
-  payload[@"xray_log_path"] = @"";
-  payload[@"xray_log_exists"] = @(NO);
-  payload[@"xray_log_tail"] = @"";
+  payload[@"xray_log_path"] = selectedXrayPath;
+  payload[@"xray_log_exists"] = @(selectedXrayExists);
+  payload[@"xray_log_tail"] = ReadTextTail(selectedXrayPath, maxBytes);
+  payload[@"xray_log_selected_kind"] = selectedXrayKind;
+  payload[@"xray_access_log_path"] = accessPath;
+  payload[@"xray_access_log_exists"] = @(accessExists);
+  payload[@"xray_access_log_tail"] = ReadTextTail(accessPath, maxBytes);
+  payload[@"xray_error_log_path"] = errorPath;
+  payload[@"xray_error_log_exists"] = @(errorExists);
+  payload[@"xray_error_log_tail"] = ReadTextTail(errorPath, maxBytes);
   return payload;
+}
+
+- (void)updateTrackedXrayLogPathsFromConfig:(NSString*)config {
+  _xrayAccessLogPath = nil;
+  _xrayErrorLogPath = nil;
+
+  NSDictionary<NSString*, NSString*>* paths = ExtractXrayLogPathsFromConfig(config);
+  NSString* access = paths[@"access"];
+  NSString* error_path = paths[@"error"];
+
+  if (access.length > 0) {
+    _xrayAccessLogPath = [access copy];
+  }
+  if (error_path.length > 0) {
+    _xrayErrorLogPath = [error_path copy];
+  }
+
+  if (_xrayAccessLogPath.length == 0 && _xrayErrorLogPath.length == 0) {
+    [self appendDesktopPluginLog:@"xray_log_paths: not configured in config.log.access/error"];
+    return;
+  }
+
+  [self appendDesktopPluginLog:[NSString
+                                   stringWithFormat:@"xray_log_paths: access=%@ error=%@",
+                                                    _xrayAccessLogPath ?: @"",
+                                                    _xrayErrorLogPath ?: @""]];
 }
 
 - (void)configureFromInitializeArgs:(NSDictionary*)args {
@@ -714,6 +834,7 @@ static NSString* ReadTextTail(NSString* path, NSInteger max_bytes) {
   options.require_tun = false;
   options.proxy_only = true;
 
+  [self updateTrackedXrayLogPathsFromConfig:(NSString*)config_value];
   const char* config_utf8 = [(NSString*)config_value UTF8String];
   const std::string start_error = _core->Start(config_utf8 != nullptr ? config_utf8 : "", options);
   if (!start_error.empty()) {
@@ -766,6 +887,7 @@ static NSString* ReadTextTail(NSString* path, NSInteger max_bytes) {
   }
 
   NSString* config = (NSString*)config_value;
+  [self updateTrackedXrayLogPathsFromConfig:config];
   __weak DartV2rayPlugin* weak_self = self;
   [self loadOrCreatePacketTunnelManagerWithCompletion:
       ^(NETunnelProviderManager* _Nullable manager, NSError* _Nullable manager_error) {
