@@ -346,6 +346,21 @@ static NSString* DefaultXrayErrorLogPath() {
   return [NSTemporaryDirectory() stringByAppendingPathComponent:@"dart_v2ray_xray_error.log"];
 }
 
+// Packet Tunnel extensions can inherit this pod target in some host setups.
+// Those targets are non-Flutter and may not link FlutterMacOS symbols, so we
+// compile a no-op plugin implementation there to avoid linker failures.
+#if defined(__APPLICATION_EXTENSION__)
+
+@implementation DartV2rayPlugin
+
++ (void)registerWithRegistrar:(NSObject<FlutterPluginRegistrar>*)registrar {
+  (void)registrar;
+}
+
+@end
+
+#else
+
 @interface DartV2rayPlugin () <FlutterStreamHandler> {
   std::unique_ptr<DesktopV2rayCore> _core;
   FlutterEventSink _statusSink;
@@ -1623,3 +1638,5 @@ static NSString* DefaultXrayErrorLogPath() {
 }
 
 @end
+
+#endif  // defined(__APPLICATION_EXTENSION__)
