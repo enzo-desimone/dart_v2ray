@@ -271,6 +271,73 @@ static NSDictionary<NSString*, NSString*>* ExtractXrayLogPathsFromConfig(NSStrin
   return result;
 }
 
+static void CollectHostCandidatesFromJsonValue(id value, NSMutableSet<NSString*>* output) {
+  if (value == nil || output == nil) {
+    return;
+  }
+
+  if ([value isKindOfClass:[NSDictionary class]]) {
+    NSDictionary* dict = (NSDictionary*)value;
+    for (id key in dict) {
+      if (![key isKindOfClass:[NSString class]]) {
+        continue;
+      }
+      NSString* key_string = [(NSString*)key lowercaseString];
+      id child = dict[key];
+      if ([key_string isEqualToString:@"address"] || [key_string isEqualToString:@"server"] ||
+          [key_string isEqualToString:@"host"] || [key_string isEqualToString:@"hostname"]) {
+        if ([child isKindOfClass:[NSString class]]) {
+          NSString* candidate = [(NSString*)child
+              stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+          if (candidate.length > 0) {
+            [output addObject:candidate];
+          }
+        }
+      }
+
+      CollectHostCandidatesFromJsonValue(child, output);
+    }
+    return;
+  }
+
+  if ([value isKindOfClass:[NSArray class]]) {
+    for (id child in (NSArray*)value) {
+      CollectHostCandidatesFromJsonValue(child, output);
+    }
+  }
+}
+
+static NSArray<NSString*>* ExtractOutboundHostCandidatesFromConfig(NSString* config_json) {
+  if (![config_json isKindOfClass:[NSString class]] || config_json.length == 0) {
+    return @[];
+  }
+
+  NSData* data = [config_json dataUsingEncoding:NSUTF8StringEncoding];
+  if (data == nil || data.length == 0) {
+    return @[];
+  }
+
+  NSError* error = nil;
+  id root = [NSJSONSerialization JSONObjectWithData:data options:0 error:&error];
+  if (error != nil || ![root isKindOfClass:[NSDictionary class]]) {
+    return @[];
+  }
+
+  NSDictionary* root_dict = (NSDictionary*)root;
+  id outbounds = root_dict[@"outbounds"];
+  if (![outbounds isKindOfClass:[NSArray class]]) {
+    return @[];
+  }
+
+  NSMutableSet<NSString*>* hosts = [NSMutableSet set];
+  for (id outbound in (NSArray*)outbounds) {
+    CollectHostCandidatesFromJsonValue(outbound, hosts);
+  }
+
+  NSArray<NSString*>* all_values = [hosts allObjects];
+  return [all_values sortedArrayUsingSelector:@selector(localizedCaseInsensitiveCompare:)];
+}
+
 static NSString* DefaultXrayAccessLogPath() {
   return [NSTemporaryDirectory() stringByAppendingPathComponent:@"dart_v2ray_xray_access.log"];
 }
@@ -1175,7 +1242,12 @@ static NSString* DefaultXrayErrorLogPath() {
   NSData* config_data = [config dataUsingEncoding:NSUTF8StringEncoding];
   provider_config[@"xrayConfig"] = config_data != nil ? config_data : [NSData data];
   provider_config[@"dnsServers"] = ExtractStringArray(args, @"dns_servers");
+  provider_config[@"bypassSubnets"] = ExtractStringArray(args, @"bypass_subnets");
+  provider_config[@"excludedRemoteHosts"] = ExtractOutboundHostCandidatesFromConfig(config);
   provider_config[@"groupIdentifier"] = _groupIdentifier ?: @"";
+  provider_config[@"tunDriver"] = @"xray_fd";
+  provider_config[@"tunFdEnvironmentKey"] = @"XRAY_TUN_FD";
+  provider_config[@"requireTun"] = @YES;
 
   NSString* remark = ExtractOptionalString(args, @"remark");
   if (remark != nil) {
