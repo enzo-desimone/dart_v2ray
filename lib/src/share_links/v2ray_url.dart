@@ -161,6 +161,62 @@ abstract class V2rayUrl {
     return JsonEncoder.withIndent(' ' * indent).convert(sanitized);
   }
 
+  /// Encodes [fullConfiguration] and overrides the Xray `log` section.
+  ///
+  /// This is useful on desktop platforms where file-based Xray logs are needed
+  /// for runtime diagnostics.
+  ///
+  /// - When [accessLogPath] or [errorLogPath] are empty strings, those keys are
+  ///   removed from the resulting `log` object.
+  /// - [logLevel] defaults to `info` to provide more actionable diagnostics.
+  String getFullConfigurationWithLogs({
+    String? accessLogPath,
+    String? errorLogPath,
+    String logLevel = 'info',
+    bool dnsLog = false,
+    int indent = 2,
+  }) {
+    final Map<String, dynamic> config = Map<String, dynamic>.from(
+      fullConfiguration,
+    );
+
+    final Map<String, dynamic> logSection =
+        config['log'] is Map
+            ? Map<String, dynamic>.from(config['log'] as Map)
+            : <String, dynamic>{};
+
+    String? normalize(String? value) {
+      if (value == null) return null;
+      final String trimmed = value.trim();
+      return trimmed.isEmpty ? '' : trimmed;
+    }
+
+    final String? access = normalize(accessLogPath);
+    if (access != null) {
+      if (access.isEmpty) {
+        logSection.remove('access');
+      } else {
+        logSection['access'] = access;
+      }
+    }
+
+    final String? error = normalize(errorLogPath);
+    if (error != null) {
+      if (error.isEmpty) {
+        logSection.remove('error');
+      } else {
+        logSection['error'] = error;
+      }
+    }
+
+    logSection['loglevel'] = logLevel;
+    logSection['dnsLog'] = dnsLog;
+    config['log'] = logSection;
+
+    final dynamic sanitized = removeNulls(config);
+    return JsonEncoder.withIndent(' ' * indent).convert(sanitized);
+  }
+
   /// Populates transport-specific settings and returns the derived SNI host.
   String populateTransportSettings({
     required String transport,
