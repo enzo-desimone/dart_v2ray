@@ -81,10 +81,10 @@ Network diagnostics:
 - `getConnectedServerDelay(...)`
 - `getCoreVersion()`
 
-Windows diagnostics:
+Desktop diagnostics:
 - `configureWindowsDebugLogging(...)`
 - `getWindowsTrafficDiagnostics()`
-- `getWindowsDebugLogs(...)`
+- `getDesktopDebugLogs(...)`
 - `buildWindowsBugReport(...)`
 
 Auto-disconnect:

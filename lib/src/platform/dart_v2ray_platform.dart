@@ -141,9 +141,11 @@ abstract class DartV2rayPlatform extends PlatformInterface {
     );
   }
 
-  /// Windows-only access to plugin/xray log tails.
-  Future<Map<String, dynamic>> getWindowsDebugLogs({int maxBytes = 16384}) {
-    throw UnimplementedError('getWindowsDebugLogs() has not been implemented.');
+  /// Desktop access to plugin/xray log tails.
+  ///
+  /// On unsupported platforms this returns a `supported=false` payload.
+  Future<Map<String, dynamic>> getDesktopDebugLogs({int maxBytes = 16384}) {
+    throw UnimplementedError('getDesktopDebugLogs() has not been implemented.');
   }
 
   /// Native status event stream.

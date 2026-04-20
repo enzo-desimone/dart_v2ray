@@ -182,12 +182,12 @@ class MethodChannelDartV2ray extends DartV2rayPlatform {
   }
 
   @override
-  Future<Map<String, dynamic>> getWindowsDebugLogs({
+  Future<Map<String, dynamic>> getDesktopDebugLogs({
     int maxBytes = 16384,
   }) async {
     try {
       final Object? raw = await methodChannel.invokeMethod<Object?>(
-        'getWindowsDebugLogs',
+        'getDesktopDebugLogs',
         <String, dynamic>{'max_bytes': maxBytes},
       );
       if (raw is Map) {
