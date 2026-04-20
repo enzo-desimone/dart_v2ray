@@ -198,6 +198,20 @@ static NSString* ReadTextTail(NSString* path, NSInteger max_bytes) {
   return text != nil ? text : @"";
 }
 
+
+static unsigned long long FileSizeAtPath(NSString* path) {
+  if (path.length == 0) {
+    return 0;
+  }
+
+  NSError* error = nil;
+  NSDictionary<NSFileAttributeKey, id>* attributes =
+      [[NSFileManager defaultManager] attributesOfItemAtPath:path error:&error];
+  (void)error;
+  NSNumber* size = attributes[NSFileSize];
+  return [size isKindOfClass:[NSNumber class]] ? [size unsignedLongLongValue] : 0;
+}
+
 static NSString* NormalizeLogFilePath(NSString* raw_path) {
   if (![raw_path isKindOfClass:[NSString class]]) {
     return nil;
@@ -757,16 +771,27 @@ static NSString* DefaultXrayErrorLogPath() {
   payload[@"plugin_log_path"] = pluginPath;
   payload[@"plugin_log_exists"] = @(exists);
   payload[@"plugin_log_tail"] = ReadTextTail(pluginPath, maxBytes);
+  payload[@"plugin_log_size"] = @(FileSizeAtPath(pluginPath));
   payload[@"xray_log_path"] = selectedXrayPath;
   payload[@"xray_log_exists"] = @(selectedXrayExists);
   payload[@"xray_log_tail"] = ReadTextTail(selectedXrayPath, maxBytes);
+  payload[@"xray_log_size"] = @(FileSizeAtPath(selectedXrayPath));
   payload[@"xray_log_selected_kind"] = selectedXrayKind;
   payload[@"xray_access_log_path"] = accessPath;
   payload[@"xray_access_log_exists"] = @(accessExists);
   payload[@"xray_access_log_tail"] = ReadTextTail(accessPath, maxBytes);
+  payload[@"xray_access_log_size"] = @(FileSizeAtPath(accessPath));
   payload[@"xray_error_log_path"] = errorPath;
   payload[@"xray_error_log_exists"] = @(errorExists);
   payload[@"xray_error_log_tail"] = ReadTextTail(errorPath, maxBytes);
+  payload[@"xray_error_log_size"] = @(FileSizeAtPath(errorPath));
+  payload[@"using_packet_tunnel"] = @([self shouldUsePacketTunnelStatus]);
+  payload[@"packet_tunnel_bundle_identifier"] = _providerBundleIdentifier ?: @"";
+  payload[@"packet_tunnel_group_identifier"] = _groupIdentifier ?: @"";
+  payload[@"packet_tunnel_last_error"] = _packetLastErrorReason ?: @"";
+  payload[@"packet_tunnel_status"] = _packetTunnelManager != nil
+      ? VpnStatusToStateString(_packetTunnelManager.connection.status)
+      : @"UNAVAILABLE";
   return payload;
 }
 
@@ -926,8 +951,14 @@ static NSString* DefaultXrayErrorLogPath() {
       [self configByEnsuringXrayLogPaths:(NSString*)config_value preferSharedGroup:NO];
   [self updateTrackedXrayLogPathsFromConfig:effective_config];
   const char* config_utf8 = [effective_config UTF8String];
+  [self appendDesktopPluginLog:[NSString stringWithFormat:@"start_desktop_core: require_tun=%@ auto_disconnect=%@",
+                                                          options.require_tun ? @"true" : @"false",
+                                                          options.auto_disconnect_seconds.has_value() ? @"set" : @"unset"]];
+
   const std::string start_error = _core->Start(config_utf8 != nullptr ? config_utf8 : "", options);
   if (!start_error.empty()) {
+    [self appendDesktopPluginLog:[NSString stringWithFormat:@"start_desktop_core_failed: %@",
+                                                            [NSString stringWithUTF8String:start_error.c_str()] ?: @"unknown_error"]];
     [self emitStatus];
     result([FlutterError errorWithCode:@"start_failed"
                                message:[NSString stringWithUTF8String:start_error.c_str()]
@@ -935,6 +966,7 @@ static NSString* DefaultXrayErrorLogPath() {
     return;
   }
 
+  [self appendDesktopPluginLog:@"start_desktop_core_succeeded"];
   [self emitStatus];
   result(nil);
 }
@@ -947,6 +979,10 @@ static NSString* DefaultXrayErrorLogPath() {
                                details:nil]);
     return;
   }
+
+  [self appendDesktopPluginLog:[NSString stringWithFormat:@"start_packet_tunnel: provider=%@ group=%@",
+                                                          _providerBundleIdentifier ?: @"",
+                                                          _groupIdentifier ?: @""]];
 
   if (_providerBundleIdentifier.length == 0 || _groupIdentifier.length == 0) {
     [self emitPacketTunnelError:
@@ -1000,6 +1036,7 @@ static NSString* DefaultXrayErrorLogPath() {
       [manager saveToPreferencesWithCompletionHandler:^(NSError* save_error) {
         dispatch_async(dispatch_get_main_queue(), ^{
           if (save_error != nil) {
+            [strong_self appendDesktopPluginLog:[NSString stringWithFormat:@"packet_tunnel_save_failed: %@", save_error.localizedDescription ?: @"unknown"]];
             [strong_self emitPacketTunnelError:save_error.localizedDescription];
             result([FlutterError errorWithCode:@"start_failed"
                                        message:save_error.localizedDescription
@@ -1010,6 +1047,7 @@ static NSString* DefaultXrayErrorLogPath() {
           [manager loadFromPreferencesWithCompletionHandler:^(NSError* load_error) {
             dispatch_async(dispatch_get_main_queue(), ^{
               if (load_error != nil) {
+                [strong_self appendDesktopPluginLog:[NSString stringWithFormat:@"packet_tunnel_reload_failed: %@", load_error.localizedDescription ?: @"unknown"]];
                 [strong_self emitPacketTunnelError:load_error.localizedDescription];
                 result([FlutterError errorWithCode:@"start_failed"
                                            message:load_error.localizedDescription
@@ -1021,6 +1059,7 @@ static NSString* DefaultXrayErrorLogPath() {
               BOOL started = [manager.connection startVPNTunnelAndReturnError:&start_error];
               if (!started || start_error != nil) {
                 NSString* message = start_error.localizedDescription ?: @"Failed to start Packet Tunnel.";
+                [strong_self appendDesktopPluginLog:[NSString stringWithFormat:@"packet_tunnel_start_failed: %@", message ?: @"unknown"]];
                 [strong_self emitPacketTunnelError:message];
                 result([FlutterError errorWithCode:@"start_failed" message:message details:nil]);
                 return;
@@ -1031,6 +1070,7 @@ static NSString* DefaultXrayErrorLogPath() {
               strong_self->_packetStatusRefreshInFlight = NO;
               strong_self->_packetLastErrorReason = nil;
               [strong_self resetPacketTunnelCounters];
+              [strong_self appendDesktopPluginLog:@"packet_tunnel_start_requested_successfully"];
               [strong_self emitStatus];
 
               result(nil);
@@ -1457,6 +1497,7 @@ static NSString* DefaultXrayErrorLogPath() {
 }
 
 - (void)emitPacketTunnelError:(NSString*)reason {
+  [self appendDesktopPluginLog:[NSString stringWithFormat:@"packet_tunnel_error: %@", reason ?: @"unknown"]];
   _usingPacketTunnel = YES;
   _packetStatusRefreshInFlight = NO;
   [self resetPacketTunnelCounters];
