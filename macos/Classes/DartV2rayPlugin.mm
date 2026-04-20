@@ -257,6 +257,14 @@ static NSDictionary<NSString*, NSString*>* ExtractXrayLogPathsFromConfig(NSStrin
   return result;
 }
 
+static NSString* DefaultXrayAccessLogPath() {
+  return [NSTemporaryDirectory() stringByAppendingPathComponent:@"dart_v2ray_xray_access.log"];
+}
+
+static NSString* DefaultXrayErrorLogPath() {
+  return [NSTemporaryDirectory() stringByAppendingPathComponent:@"dart_v2ray_xray_error.log"];
+}
+
 @interface DartV2rayPlugin () <FlutterStreamHandler> {
   std::unique_ptr<DesktopV2rayCore> _core;
   FlutterEventSink _statusSink;
@@ -313,6 +321,7 @@ static NSDictionary<NSString*, NSString*>* ExtractXrayLogPathsFromConfig(NSStrin
 - (void)resetPacketTunnelCounters;
 - (void)emitPacketTunnelError:(NSString*)reason;
 - (void)appendDesktopPluginLog:(NSString*)message;
+- (NSString*)configByEnsuringXrayLogPaths:(NSString*)config preferSharedGroup:(BOOL)preferSharedGroup;
 - (void)updateTrackedXrayLogPathsFromConfig:(NSString*)config;
 - (NSDictionary*)buildDesktopDebugLogs:(int)maxBytes;
 
@@ -635,6 +644,85 @@ static NSDictionary<NSString*, NSString*>* ExtractXrayLogPathsFromConfig(NSStrin
   }
 }
 
+- (NSString*)configByEnsuringXrayLogPaths:(NSString*)config preferSharedGroup:(BOOL)preferSharedGroup {
+  if (![config isKindOfClass:[NSString class]] || config.length == 0) {
+    return config;
+  }
+
+  NSData* input_data = [config dataUsingEncoding:NSUTF8StringEncoding];
+  if (input_data == nil || input_data.length == 0) {
+    return config;
+  }
+
+  NSError* parse_error = nil;
+  id root = [NSJSONSerialization JSONObjectWithData:input_data options:NSJSONReadingMutableContainers error:&parse_error];
+  if (parse_error != nil || ![root isKindOfClass:[NSDictionary class]]) {
+    [self appendDesktopPluginLog:@"xray_log_paths: unable to parse config JSON for auto-injection"];
+    return config;
+  }
+
+  NSMutableDictionary* root_dict = [NSMutableDictionary dictionaryWithDictionary:(NSDictionary*)root];
+  NSMutableDictionary* log_dict = nil;
+  id existing_log = root_dict[@"log"];
+  if ([existing_log isKindOfClass:[NSDictionary class]]) {
+    log_dict = [NSMutableDictionary dictionaryWithDictionary:(NSDictionary*)existing_log];
+  } else {
+    log_dict = [NSMutableDictionary dictionary];
+  }
+
+  NSString* existing_access = NormalizeLogFilePath(log_dict[@"access"]);
+  NSString* existing_error = NormalizeLogFilePath(log_dict[@"error"]);
+  if (existing_access.length > 0 && existing_error.length > 0) {
+    return config;
+  }
+
+  NSString* default_access = DefaultXrayAccessLogPath();
+  NSString* default_error = DefaultXrayErrorLogPath();
+
+  if (preferSharedGroup && _groupIdentifier.length > 0) {
+    NSURL* group_url =
+        [[NSFileManager defaultManager] containerURLForSecurityApplicationGroupIdentifier:_groupIdentifier];
+    if (group_url != nil) {
+      NSURL* logs_dir = [group_url URLByAppendingPathComponent:@"Library/Caches" isDirectory:YES];
+      NSError* create_error = nil;
+      [[NSFileManager defaultManager] createDirectoryAtURL:logs_dir
+                               withIntermediateDirectories:YES
+                                                attributes:nil
+                                                     error:&create_error];
+      if (create_error == nil) {
+        default_access = [[logs_dir URLByAppendingPathComponent:@"dart_v2ray_xray_access.log"] path];
+        default_error = [[logs_dir URLByAppendingPathComponent:@"dart_v2ray_xray_error.log"] path];
+      }
+    }
+  }
+
+  if (existing_access.length == 0) {
+    log_dict[@"access"] = default_access;
+  }
+  if (existing_error.length == 0) {
+    log_dict[@"error"] = default_error;
+  }
+
+  root_dict[@"log"] = log_dict;
+
+  NSError* serialize_error = nil;
+  NSData* output_data = [NSJSONSerialization dataWithJSONObject:root_dict options:0 error:&serialize_error];
+  if (serialize_error != nil || output_data == nil) {
+    [self appendDesktopPluginLog:@"xray_log_paths: failed to serialize config JSON after auto-injection"];
+    return config;
+  }
+
+  NSString* output = [[NSString alloc] initWithData:output_data encoding:NSUTF8StringEncoding];
+  if (output.length == 0) {
+    return config;
+  }
+
+  [self appendDesktopPluginLog:[NSString stringWithFormat:@"xray_log_paths: auto-injected access=%@ error=%@",
+                                                          log_dict[@"access"] ?: @"",
+                                                          log_dict[@"error"] ?: @""]];
+  return output;
+}
+
 - (NSDictionary*)buildDesktopDebugLogs:(int)maxBytes {
   NSMutableDictionary* payload = [NSMutableDictionary dictionary];
   NSString* pluginPath = DesktopPluginLogPath();
@@ -834,8 +922,10 @@ static NSDictionary<NSString*, NSString*>* ExtractXrayLogPathsFromConfig(NSStrin
   options.require_tun = false;
   options.proxy_only = true;
 
-  [self updateTrackedXrayLogPathsFromConfig:(NSString*)config_value];
-  const char* config_utf8 = [(NSString*)config_value UTF8String];
+  NSString* effective_config =
+      [self configByEnsuringXrayLogPaths:(NSString*)config_value preferSharedGroup:NO];
+  [self updateTrackedXrayLogPathsFromConfig:effective_config];
+  const char* config_utf8 = [effective_config UTF8String];
   const std::string start_error = _core->Start(config_utf8 != nullptr ? config_utf8 : "", options);
   if (!start_error.empty()) {
     [self emitStatus];
@@ -886,7 +976,8 @@ static NSDictionary<NSString*, NSString*>* ExtractXrayLogPathsFromConfig(NSStrin
     return;
   }
 
-  NSString* config = (NSString*)config_value;
+  NSString* config =
+      [self configByEnsuringXrayLogPaths:(NSString*)config_value preferSharedGroup:YES];
   [self updateTrackedXrayLogPathsFromConfig:config];
   __weak DartV2rayPlugin* weak_self = self;
   [self loadOrCreatePacketTunnelManagerWithCompletion:
