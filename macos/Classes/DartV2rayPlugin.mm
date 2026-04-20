@@ -161,9 +161,17 @@ static NSInteger ParseIntegerString(NSString* value, NSInteger fallback_value) {
     return fallback_value;
   }
 
-  NSScanner* scanner = [NSScanner scannerWithString:value];
+  NSString* trimmed = [value stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+  if (trimmed.length == 0) {
+    return fallback_value;
+  }
+
+  NSScanner* scanner = [NSScanner scannerWithString:trimmed];
   NSInteger parsed = 0;
   if (![scanner scanInteger:&parsed]) {
+    return fallback_value;
+  }
+  if (!scanner.isAtEnd) {
     return fallback_value;
   }
   return parsed;
@@ -662,6 +670,15 @@ static NSInteger ParseIntegerString(NSString* value, NSInteger fallback_value) {
         errorWithCode:@"invalid_state"
               message:@"initialize() must provide providerBundleIdentifier and groupIdentifier before requireTun=true on macOS."
               details:nil]);
+    return;
+  }
+
+  NSString* packet_stop_error = [self stopPacketTunnelIfNeeded];
+  if (packet_stop_error != nil) {
+    [self emitPacketTunnelError:packet_stop_error];
+    result([FlutterError errorWithCode:@"start_failed"
+                               message:packet_stop_error
+                               details:nil]);
     return;
   }
 
