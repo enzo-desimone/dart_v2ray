@@ -684,9 +684,28 @@ static NSString* DefaultXrayErrorLogPath() {
     log_dict = [NSMutableDictionary dictionary];
   }
 
+  const id raw_access_value = log_dict[@"access"];
+  const id raw_error_value = log_dict[@"error"];
   NSString* existing_access = NormalizeLogFilePath(log_dict[@"access"]);
   NSString* existing_error = NormalizeLogFilePath(log_dict[@"error"]);
-  if (existing_access.length > 0 && existing_error.length > 0) {
+  BOOL has_relative_log_paths = NO;
+  if ([raw_access_value isKindOfClass:[NSString class]]) {
+    NSString* raw_access = (NSString*)raw_access_value;
+    if (raw_access.length > 0 && ![raw_access isAbsolutePath] && existing_access.length > 0) {
+      log_dict[@"access"] = existing_access;
+      has_relative_log_paths = YES;
+    }
+  }
+
+  if ([raw_error_value isKindOfClass:[NSString class]]) {
+    NSString* raw_error = (NSString*)raw_error_value;
+    if (raw_error.length > 0 && ![raw_error isAbsolutePath] && existing_error.length > 0) {
+      log_dict[@"error"] = existing_error;
+      has_relative_log_paths = YES;
+    }
+  }
+
+  if (existing_access.length > 0 && existing_error.length > 0 && !has_relative_log_paths) {
     return config;
   }
 
@@ -731,7 +750,9 @@ static NSString* DefaultXrayErrorLogPath() {
     return config;
   }
 
-  [self appendDesktopPluginLog:[NSString stringWithFormat:@"xray_log_paths: auto-injected access=%@ error=%@",
+  NSString* log_action = has_relative_log_paths ? @"normalized" : @"auto-injected";
+  [self appendDesktopPluginLog:[NSString stringWithFormat:@"xray_log_paths: %@ access=%@ error=%@",
+                                                          log_action,
                                                           log_dict[@"access"] ?: @"",
                                                           log_dict[@"error"] ?: @""]];
   return output;
