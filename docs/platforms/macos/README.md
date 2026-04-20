@@ -121,6 +121,26 @@ await v2ray.start(
 - Full-tunnel behavior depends on your macOS signing/entitlements distribution
   setup for Network Extension + App Group.
 
+### Packet Tunnel providerConfiguration contract
+
+When `requireTun: true` starts on macOS, the plugin now writes these keys to
+`NETunnelProviderProtocol.providerConfiguration`:
+
+- `xrayConfig` (`Data`): full Xray JSON config.
+- `dnsServers` (`[String]`): DNS servers from Dart `dns_servers`.
+- `bypassSubnets` (`[String]`): bypass CIDRs from Dart `bypass_subnets`.
+- `excludedRemoteHosts` (`[String]`): host/address candidates parsed from Xray
+  outbounds (use these to avoid upstream routing loops).
+- `groupIdentifier` (`String`): app group identifier.
+- `remark` (`String`, optional): profile name.
+- `autoDisconnect` (`Dictionary`, optional): auto-disconnect options.
+- `tunDriver` (`String`): currently `xray_fd`.
+- `tunFdEnvironmentKey` (`String`): currently `XRAY_TUN_FD`.
+- `requireTun` (`Bool`): always `true` in Packet Tunnel mode.
+
+Your Packet Tunnel extension should treat unknown keys as optional for forward
+compatibility.
+
 ## Troubleshooting
 
 - `initialize` / `start` fails:
@@ -148,3 +168,15 @@ await v2ray.start(
 
 The high-level Dart API is platform-agnostic, so app-layer Dart code usually
 requires minimal changes when enabling macOS.
+
+
+## Xray-core based implementation track
+
+If your goal is to make `requireTun: true` behave as a real full-tunnel VPN on
+macOS, follow the dedicated implementation blueprint based directly on
+Xray-core semantics:
+
+- [`XRAY_CORE_TUN_IMPLEMENTATION_PLAN.md`](./XRAY_CORE_TUN_IMPLEMENTATION_PLAN.md)
+
+This track focuses on Packet Tunnel + Xray TUN FD orchestration, routing
+anti-loop, and DNS leak prevention.
