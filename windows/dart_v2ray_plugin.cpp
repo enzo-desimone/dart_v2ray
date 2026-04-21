@@ -21,8 +21,8 @@ namespace {
 
 const char kMethodChannelName[] = "dart_v2ray";
 const char kStatusChannelName[] = "dart_v2ray/status";
-constexpr UINT_PTR kStatusTimerBaseId = 0xF2A0;
-constexpr UINT kStatusTimerIntervalMs = 1000;
+constexpr UINT kStatusTickIntervalMs = 1000;
+constexpr UINT kStatusTickMessage = WM_APP + 0x32A;
 constexpr auto kConnectedStatusMinInterval = std::chrono::seconds(1);
 constexpr auto kStatusHeartbeatInterval = std::chrono::seconds(5);
 
@@ -396,12 +396,7 @@ void DartV2rayPlugin::StartStatusThread() {
     return;
   }
 
-  if (registrar_ == nullptr || registrar_->GetView() == nullptr) {
-    status_thread_running_ = false;
-    return;
-  }
-
-  if (window_proc_delegate_id_ == 0) {
+  if (window_proc_delegate_id_ == 0 && registrar_ != nullptr) {
     window_proc_delegate_id_ = registrar_->RegisterTopLevelWindowProcDelegate(
         [this](HWND hwnd, UINT message, WPARAM wparam,
                LPARAM lparam) -> std::optional<LRESULT> {
@@ -417,9 +412,30 @@ void DartV2rayPlugin::StartStatusThread() {
     last_status_published_at_ = std::chrono::steady_clock::time_point{};
   }
 
-  status_timer_id_ = kStatusTimerBaseId + reinterpret_cast<UINT_PTR>(this);
-  SetTimer(registrar_->GetView()->GetNativeWindow(), status_timer_id_,
-           kStatusTimerIntervalMs, nullptr);
+  if (status_thread_.joinable()) {
+    status_thread_.join();
+  }
+
+  status_thread_ = std::thread([this]() {
+    while (status_thread_running_.load()) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(kStatusTickIntervalMs));
+      if (!status_thread_running_.load()) {
+        break;
+      }
+
+      HWND hwnd = nullptr;
+      if (registrar_ != nullptr && registrar_->GetView() != nullptr) {
+        hwnd = registrar_->GetView()->GetNativeWindow();
+      }
+      if (hwnd == nullptr) {
+        continue;
+      }
+
+      PostMessage(hwnd, kStatusTickMessage, reinterpret_cast<WPARAM>(this), 0);
+    }
+  });
+
+  PublishStatus();
 }
 
 void DartV2rayPlugin::StopStatusThread() {
@@ -427,11 +443,9 @@ void DartV2rayPlugin::StopStatusThread() {
     return;
   }
 
-  if (registrar_ != nullptr && registrar_->GetView() != nullptr &&
-      status_timer_id_ != 0) {
-    KillTimer(registrar_->GetView()->GetNativeWindow(), status_timer_id_);
+  if (status_thread_.joinable()) {
+    status_thread_.join();
   }
-  status_timer_id_ = 0;
 
   std::lock_guard<std::mutex> lock(sink_mutex_);
   last_status_payload_.clear();
@@ -482,11 +496,12 @@ void DartV2rayPlugin::PublishStatus() {
 
 std::optional<LRESULT> DartV2rayPlugin::HandleTopLevelWindowProc(
     HWND /*hwnd*/, UINT message, WPARAM wparam, LPARAM /*lparam*/) {
-  if (!status_thread_running_) {
+  if (!status_thread_running_.load()) {
     return std::nullopt;
   }
 
-  if (message == WM_TIMER && status_timer_id_ != 0 && wparam == status_timer_id_) {
+  if (message == kStatusTickMessage &&
+      wparam == reinterpret_cast<WPARAM>(this)) {
     PublishStatus();
     return 0;
   }

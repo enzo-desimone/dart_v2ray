@@ -12,6 +12,7 @@
 #include <mutex>
 #include <optional>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include "desktop_v2ray_core.h"
@@ -42,7 +43,7 @@ class DartV2rayPlugin : public flutter::Plugin {
   flutter::PluginRegistrarWindows* registrar_ = nullptr;
   std::atomic<bool> status_thread_running_{false};
   int window_proc_delegate_id_ = 0;
-  UINT_PTR status_timer_id_ = 0;
+  std::thread status_thread_;
   std::mutex sink_mutex_;
   std::unique_ptr<flutter::EventSink<flutter::EncodableValue>> status_sink_;
   std::vector<std::string> last_status_payload_;
