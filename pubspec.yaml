@@ -1,0 +1,34 @@
+name: dart_v2ray
+description: Flutter plugin to run Xray/V2Ray as local proxy or VPN on Android, iOS, Windows, MacOS and Linux.
+version: 0.1.0
+homepage: https://github.com/enzo-desimone/dart_v2ray
+
+
+environment:
+  sdk: ^3.7.2
+  flutter: ">=3.3.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  plugin_platform_interface: ^2.1.8
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  plugin:
+    platforms:
+      android:
+        package: com.dart.v2ray.vpn
+        pluginClass: DartV2rayPlugin
+      ios:
+        pluginClass: DartV2rayPlugin
+      macos:
+        pluginClass: DartV2rayPlugin
+      linux:
+        pluginClass: DartV2rayPlugin
+      windows:
+        pluginClass: DartV2rayPluginCApi
