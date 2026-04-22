@@ -36,7 +36,3 @@ migrate_working_dir/
 # Generated native runtimes (downloaded during pod install)
 ios/XRay.xcframework/
 ios/XRay.xcframework.zip
-macos/bin/xray
-macos/bin/geoip.dat
-macos/bin/geosite.dat
-macos/.dart_v2ray_macos_runtime_tmp/

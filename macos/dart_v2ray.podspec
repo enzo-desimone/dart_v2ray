@@ -20,64 +20,17 @@ auto-disconnect support.
     GEOIP_FILE="$PLUGIN_BIN_DIR/geoip.dat"
     GEOSITE_FILE="$PLUGIN_BIN_DIR/geosite.dat"
 
-    mkdir -p "$PLUGIN_BIN_DIR"
+    missing=""
+    [ -f "$XRAY_BIN" ]     || missing="${missing}\\n  - $XRAY_BIN"
+    [ -f "$GEOIP_FILE" ]   || missing="${missing}\\n  - $GEOIP_FILE"
+    [ -f "$GEOSITE_FILE" ] || missing="${missing}\\n  - $GEOSITE_FILE"
 
-    copy_runtime_file() {
-      FILE_NAME="$1"
-      SOURCE_DIR="$2"
-      SOURCE_FILE="$SOURCE_DIR/$FILE_NAME"
-
-      if [ ! -f "$SOURCE_FILE" ]; then
-        return 1
-      fi
-
-      cp "$SOURCE_FILE" "$PLUGIN_BIN_DIR/$FILE_NAME"
-      return 0
-    }
-
-    has_all_runtime_files() {
-      [ -f "$XRAY_BIN" ] && [ -f "$GEOIP_FILE" ] && [ -f "$GEOSITE_FILE" ]
-    }
-
-    if ! has_all_runtime_files; then
-      if [ -n "${DART_V2RAY_MACOS_RUNTIME_DIR:-}" ]; then
-        echo "dart_v2ray(macOS): using DART_V2RAY_MACOS_RUNTIME_DIR=$DART_V2RAY_MACOS_RUNTIME_DIR"
-
-        copy_runtime_file "xray" "$DART_V2RAY_MACOS_RUNTIME_DIR" || true
-        copy_runtime_file "geoip.dat" "$DART_V2RAY_MACOS_RUNTIME_DIR" || true
-        copy_runtime_file "geosite.dat" "$DART_V2RAY_MACOS_RUNTIME_DIR" || true
-      fi
-    fi
-
-    if ! has_all_runtime_files; then
-      HOST_MACOS_BIN_DIR="$(cd .. && pwd)/macos/bin"
-      echo "dart_v2ray(macOS): trying host runtime directory: $HOST_MACOS_BIN_DIR"
-
-      copy_runtime_file "xray" "$HOST_MACOS_BIN_DIR" || true
-      copy_runtime_file "geoip.dat" "$HOST_MACOS_BIN_DIR" || true
-      copy_runtime_file "geosite.dat" "$HOST_MACOS_BIN_DIR" || true
-    fi
-
-    if ! has_all_runtime_files; then
-      cat >&2 <<'MSG'
-dart_v2ray(macOS): missing runtime files.
-
-Expected one of these setups:
-
-1) Set DART_V2RAY_MACOS_RUNTIME_DIR to a folder containing:
-   - xray
-   - geoip.dat
-   - geosite.dat
-
-2) Put the files in the host Flutter app at:
-   - macos/bin/xray
-   - macos/bin/geoip.dat
-   - macos/bin/geosite.dat
-MSG
+    if [ -n "$missing" ]; then
+      printf 'dart_v2ray(macOS): runtime files missing from the plugin. Commit these files into macos/bin/ in the dart_v2ray package:\\n%b\\n' "$missing" >&2
       exit 1
     fi
 
-    chmod +x "$XRAY_BIN" || true
+    chmod +x "$XRAY_BIN"
   CMD
 
   s.source_files = 'Classes/**/*'
