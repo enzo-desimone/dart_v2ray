@@ -1,6 +1,6 @@
 import Cocoa
 import FlutterMacOS
-import XRay
+import LibXray
 
 public class DartV2rayPlugin: NSObject, FlutterPlugin {
   public static func register(with registrar: FlutterPluginRegistrar) {

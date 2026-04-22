@@ -2,7 +2,7 @@
 import UIKit
 import NetworkExtension
 import Combine
-import XRay
+import LibXray
 
 public class DartV2rayPlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
     
