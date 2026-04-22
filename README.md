@@ -22,7 +22,7 @@ auto-disconnect, and share-link parsing (`vless://`, `vmess://`, `trojan://`,
 | iOS | Available | `XRay.xcframework` auto-download at `pod install` (override supported) | Packet Tunnel target + App Group + matching identifiers |
 | Windows | Available, tested | Auto-download `Xray-windows-64.zip` at CMake configure | Run as Administrator for TUN workflows |
 | Linux | Available (not fully team-validated) | Runtime binaries must be reachable in deployment | Environment/package permissions depend on distro |
-| macOS | Available | Manual runtime files (`xray`, `geoip.dat`, `geosite.dat`) | Proxy mode minimal; TUN needs Packet Tunnel + App Group + `Tun2SocksKit` |
+| macOS | Available | Bundled inside the plugin (`macos/bin/`); no host-app setup required | Proxy mode minimal; TUN needs Packet Tunnel + App Group + `Tun2SocksKit` |
 
 ## Installation
 
@@ -147,14 +147,14 @@ Linux:
   depending on distro/package format.
 
 macOS:
-- Provide runtime files manually before `pod install`:
-  `macos/bin/xray`, `macos/bin/geoip.dat`, `macos/bin/geosite.dat`.
-- Alternatively, set `DART_V2RAY_MACOS_RUNTIME_DIR` to a folder containing
-  `xray`, `geoip.dat`, and `geosite.dat`.
-- For TUN mode (`requireTun: true`), add Packet Tunnel extension,
-  configure shared App Group, and link `Tun2SocksKit` to extension target.
-- Ensure extension target includes `xray`, `geoip.dat`, `geosite.dat`
-  in extension resources.
+- No manual runtime setup required. `xray`, `geoip.dat`, and `geosite.dat`
+  are committed inside the plugin at `macos/bin/` as a universal binary
+  (arm64 + x86_64). The plugin is self-contained; no host-app `macos/bin/`
+  or `DART_V2RAY_MACOS_RUNTIME_DIR` needed.
+- For TUN mode (`requireTun: true`), add a `XrayTunnel` Packet Tunnel
+  extension target, configure a shared App Group, link `Tun2SocksKit`,
+  and add a Run Script to copy runtime files from the plugin into the
+  extension bundle. See the [macOS Guide](docs/platforms/macos/README.md).
 
 ## Documentation Hub
 

@@ -1,5 +1,31 @@
 ## Unreleased
 
+### macOS — self-contained runtime packaging
+
+- Runtime files (`xray`, `geoip.dat`, `geosite.dat`) are now committed directly
+  inside the plugin at `macos/bin/`. The plugin is self-contained on macOS and
+  requires no host-app setup before `pod install`.
+- `xray` is a universal binary (arm64 + x86_64) built with `lipo -create`.
+- `dart_v2ray.podspec` `prepare_command` simplified: verifies files exist at
+  `$(pwd)/bin/` (always the plugin's own `macos/bin/`), runs `chmod +x xray`,
+  and exits with a clear error if any file is missing. All host-app copy logic
+  and `DART_V2RAY_MACOS_RUNTIME_DIR` fallback removed.
+- Removed `macos/bin/xray`, `macos/bin/geoip.dat`, `macos/bin/geosite.dat`
+  from `.gitignore` so runtime files can be tracked.
+
+### macOS — `XrayTunnel` extension packaging
+
+- Added documentation and Run Script for the `XrayTunnel` Packet Tunnel target
+  to copy runtime files from the plugin's `macos/bin/` into the extension bundle
+  at build time (`TARGET_BUILD_DIR/UNLOCALIZED_RESOURCES_FOLDER_PATH`).
+- Documented requirement to set `ENABLE_USER_SCRIPT_SANDBOXING = No` on the
+  `XrayTunnel` target to allow the Run Script to write to the build directory.
+- Documented correct Xcode Build Phases order for `Runner` to avoid dependency
+  cycle errors when `XrayTunnel.appex` is embedded.
+- Documented framework embedding rules: `NetworkExtension.framework` and
+  `Pods_XrayTunnel.framework` must be `Do Not Embed` in the extension target;
+  `XrayTunnel.appex` must be `Embed Without Signing` in `Runner`.
+
 - Refactored Dart sources into a clearer structure:
   `lib/src/core`, `lib/src/platform`, and `lib/src/share_links`.
 - Split persistent status and Windows diagnostics logic into dedicated helper
