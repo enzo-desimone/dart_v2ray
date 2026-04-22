@@ -1,321 +1,123 @@
 # macOS Guide
 
-This guide covers macOS-specific setup for `dart_v2ray`.
+This guide describes the **helper-tool-based** macOS architecture for `dart_v2ray`, designed for App Sandbox and Mac App Store-oriented packaging.
 
-## Current Status
+## Architecture Summary
 
-- Plugin implementation: available
-- Team validation status: implementation present; validate in your target
-  signing/distribution setup
+`dart_v2ray` now uses a plugin-owned runtime layout:
+
+```text
+macos/
+  runtime/
+    xray
+    geoip.dat
+    geosite.dat
+  runtime_helper/
+    DartV2RayRuntimeHelper.swift
+```
+
+At build time, a plugin-owned CocoaPods script phase performs packaging into each consuming macOS target (app and/or extension target that integrates the pod):
+
+- Copies runtime files to:
+  - `Contents/Resources/dart_v2ray_runtime/`
+- Compiles and embeds helper executable to:
+  - `Contents/Helpers/dart_v2ray_runtime_helper`
+- Signs nested executables (`xray`, helper) when code signing is enabled.
+
+Runtime launch model:
+- Plugin desktop core prefers launching `dart_v2ray_runtime_helper`.
+- Helper resolves plugin runtime directory, sets `XRAY_LOCATION_ASSET`, then launches `xray`.
+
+This replaces the previous raw-resource launch approach.
 
 ---
 
-## Runtime Files — Self-Contained Plugin
+## Why this design
 
-The plugin is **self-contained** on macOS. The three Xray runtime files are committed
-directly inside the plugin at:
-
-```
-macos/bin/
-  xray          ← universal binary (arm64 + x86_64), executable bit set
-  geoip.dat     ← architecture-independent
-  geosite.dat   ← architecture-independent
-```
-
-No host-app `macos/bin/` directory is required. No `DART_V2RAY_MACOS_RUNTIME_DIR`
-environment variable is needed. No download step runs during `pod install`.
-
-The `prepare_command` in `dart_v2ray.podspec`:
-1. Verifies all three files exist at `$(pwd)/bin/` — always the plugin's own
-   `macos/bin/`, regardless of the host project location.
-2. Runs `chmod +x` on `xray`.
-3. Fails immediately with a clear error if any file is missing.
-
-CocoaPods copies them to the host app's `Contents/Resources/` via
-`s.resources = ['bin/xray', 'bin/geoip.dat', 'bin/geosite.dat']`.
-
-### Universal binary
-
-The `xray` binary supports both Apple Silicon and Intel in a single file:
-
-```bash
-lipo -create xray-arm64 xray-x86_64 -output macos/bin/xray
-lipo -info macos/bin/xray   # verify: arm64 x86_64
-```
-
-`geoip.dat` and `geosite.dat` are architecture-independent and require no merging.
-
-### Committing the runtime to git
-
-```bash
-chmod +x macos/bin/xray
-git update-index --chmod=+x macos/bin/xray
-git add macos/bin/xray macos/bin/geoip.dat macos/bin/geosite.dat
-git commit -m "feat(macos): bundle xray runtime inside plugin"
-```
-
-`git update-index --chmod=+x` preserves the executable bit in the repository,
-regardless of the platform on which the repo is cloned.
-
-### Runtime path discovery
-
-`DiscoverRuntimePaths()` in `shared/desktop_v2ray_core.cc` resolves `xray` at
-runtime using this order:
-
-1. `XRAY_EXECUTABLE` environment variable (override only).
-2. `_NSGetExecutablePath` → searches `YourApp.app/Contents/MacOS/`,
-   then `../Resources/`, then up to 8 parent directories.
-   Each directory is probed for `<root>/xray`, `<root>/bin/xray`,
-   `<root>/macos/bin/xray`.
-3. `xray` from `$PATH` as final fallback.
-
-CocoaPods places resources at `Contents/Resources/`, which is found at step 2.
+- Uses a structured embedded helper model compatible with sandboxed macOS apps.
+- Keeps runtime packaging logic inside the plugin instead of per-project copy scripts.
+- Reduces host-app integration to unavoidable Apple-project concerns (targets, entitlements, signing).
 
 ---
 
-## Usage
-
-macOS uses the same high-level Dart API as Linux/Windows.
+## Host integration (minimal)
 
 ### Proxy mode (`requireTun: false`)
 
-```dart
-await v2ray.initialize();
-await v2ray.start(
-  remark: 'macOS profile',
-  config: configJson,
-  requireTun: false,
-);
-```
+No manual runtime copy steps are required.
 
-Xray runs as a local process with a socks/http/mixed inbound. No system routing
-is modified.
+### Packet Tunnel mode (`requireTun: true`)
 
-### VPN / full-tunnel mode (`requireTun: true`)
+You still need Apple-required host setup:
 
-```dart
-await v2ray.initialize(
-  providerBundleIdentifier: 'com.example.myapp',
-  groupIdentifier: 'group.com.example.myapp',
-);
+1. Add a Network Extension target (`XrayTunnel`).
+2. Enable App Sandbox + Network Extensions + App Groups for Runner and extension.
+3. Ensure extension target is code-signed with proper provisioning.
+4. Ensure the extension target integrates CocoaPods so `dart_v2ray` script phase runs there too.
 
-await v2ray.start(
-  remark: 'macOS full tunnel',
-  config: configJson,
-  requireTun: true,
-);
-```
-
-Uses `NETunnelProviderManager` / Packet Tunnel. Requires the native setup below.
+> The plugin can package runtime/helper for any target that integrates the pod. Creating/managing extension targets and entitlements remains host-project-specific by Apple design.
 
 ---
 
-## Native Setup — `XrayTunnel` Extension (`requireTun: true`)
+## Podfile pattern for extension integration
 
-### 1. Add the Packet Tunnel target
+Example:
 
-1. In Xcode add a **Network Extension** target named `XrayTunnel`.
-2. Set its bundle identifier to `<providerBundleIdentifier>.XrayTunnel`
-   (the plugin appends `.XrayTunnel` automatically if the suffix is absent).
-3. Add the `Network Extensions` and `App Groups` capabilities to both
-   `Runner` and `XrayTunnel`. Use the same App Group string in both.
+```ruby
+target 'Runner' do
+  use_frameworks!
+  flutter_install_all_macos_pods File.dirname(File.realpath(__FILE__))
+end
 
-### 2. Link Tun2SocksKit
-
-Add the Swift package `Tun2SocksKit` and link the `Tun2SocksKit` product to the
-`XrayTunnel` target only — not to `Runner`.
-
-### 3. Copy runtime files into the extension bundle
-
-CocoaPods `s.resources` delivers files to the main app bundle only. The extension
-runs in a separate sandbox and needs its own copies. Add a **Run Script** build
-phase to the `XrayTunnel` target:
-
-```sh
-set -e
-
-PLUGIN_DIR="${SRCROOT}/Flutter/ephemeral/.symlinks/plugins/dart_v2ray"
-SOURCE_DIR="${PLUGIN_DIR}/macos/bin"
-DEST_DIR="${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}"
-
-test -f "${SOURCE_DIR}/xray"        || { echo "error: Missing ${SOURCE_DIR}/xray";        exit 1; }
-test -f "${SOURCE_DIR}/geoip.dat"   || { echo "error: Missing ${SOURCE_DIR}/geoip.dat";   exit 1; }
-test -f "${SOURCE_DIR}/geosite.dat" || { echo "error: Missing ${SOURCE_DIR}/geosite.dat"; exit 1; }
-
-mkdir -p "${DEST_DIR}"
-cp "${SOURCE_DIR}/xray"        "${DEST_DIR}/xray"
-cp "${SOURCE_DIR}/geoip.dat"   "${DEST_DIR}/geoip.dat"
-cp "${SOURCE_DIR}/geosite.dat" "${DEST_DIR}/geosite.dat"
-chmod +x "${DEST_DIR}/xray"
+target 'XrayTunnel' do
+  use_frameworks!
+  flutter_install_all_macos_pods File.dirname(File.realpath(__FILE__))
+end
 ```
 
-This mirrors how Android's Gradle build copies native binaries automatically.
-The source path uses Flutter's ephemeral symlink, which always resolves to the
-correct version of the plugin for the current project.
-
-**Required setting — disable script sandboxing:**
-
-| Target | Setting | Value |
-|---|---|---|
-| `XrayTunnel` | `ENABLE_USER_SCRIPT_SANDBOXING` | `No` |
-
-In Xcode UI: **Build Settings → User Script Sandboxing → No**.
-Without this, the Run Script cannot write to `TARGET_BUILD_DIR` and the build fails silently.
-
-### 4. Xcode — `XrayTunnel` target configuration
-
-**General / Frameworks and Libraries:**
-
-| Framework | Embed |
-|---|---|
-| `NetworkExtension.framework` | Do Not Embed |
-| `Pods_XrayTunnel.framework` | Do Not Embed |
-
-Extensions must not embed frameworks already linked by the host app.
-Remove any `Embed Frameworks` phase in `XrayTunnel`, or leave it empty.
-
-**Build Phases:**
-
-| Phase | Notes |
-|---|---|
-| Run Script (runtime copy) | Script above; copies `xray`, `geoip.dat`, `geosite.dat` |
-| Copy Bundle Resources | May remain empty — the Run Script handles delivery |
-
-### 5. Xcode — `Runner` target configuration
-
-**General / Frameworks, Libraries, and Embedded Content:**
-
-| Item | Embed |
-|---|---|
-| `XrayTunnel.appex` | Embed Without Signing |
-| `Pods_Runner.framework` | Do Not Embed |
-
-**Build Phases — required order:**
-
-Placing `Embed Foundation Extensions` before `[CP] Embed Pods Frameworks` causes
-dependency cycle errors. Correct order:
-
-1. Target Dependencies
-2. Run Build Tool Plug-ins
-3. `[CP] Check Pods Manifest.lock`
-4. `[CP] Embed Pods Frameworks`
-5. `Embed Foundation Extensions`
-6. Run Script (any custom scripts)
-7. Compile Sources
-8. Link Binary With Libraries
-9. Copy Bundle Resources
-10. `[CP] Copy Pods Resources`
-
-### 6. Version consistency
-
-`CFBundleShortVersionString` of `XrayTunnel` must match `Runner`:
-
-```
-Runner:      CFBundleShortVersionString = 1.0.0
-XrayTunnel:  CFBundleShortVersionString = 1.0.0
-```
-
-Mismatches produce App Store and archive warnings.
-
-### 7. Entitlements
-
-`XrayTunnel.entitlements` must include the App Group capability and, if the
-extension makes direct outbound network connections, the network client entitlement:
-
-```xml
-<key>com.apple.security.application-groups</key>
-<array>
-  <string>group.com.example.myapp</string>
-</array>
-<key>com.apple.security.network.client</key>
-<true/>
-```
-
-Align with the provisioning profile configured in Xcode Signing & Capabilities.
+If your extension should not link Flutter/plugin code directly, keep linkage minimal according to your project constraints, but ensure runtime packaging phase runs for the extension build product.
 
 ---
 
-## `providerConfiguration` contract
+## Migration from old architecture
 
-When `requireTun: true` starts on macOS, the plugin writes these keys to
-`NETunnelProviderProtocol.providerConfiguration`:
+Old approach:
+- Runtime in `macos/bin/`.
+- Host-managed Run Script copied `xray`/`geo*.dat` into `.appex` resources.
+- Extension launched copied raw `xray` directly.
 
-| Key | Type | Description |
-|---|---|---|
-| `xrayConfig` | `Data` | Full Xray JSON config |
-| `dnsServers` | `[String]` | DNS servers from Dart `dns_servers` |
-| `bypassSubnets` | `[String]` | Bypass CIDRs from Dart `bypass_subnets` |
-| `excludedRemoteHosts` | `[String]` | Host/address candidates parsed from Xray outbounds |
-| `groupIdentifier` | `String` | App Group identifier |
-| `remark` | `String` (optional) | Profile name |
-| `autoDisconnect` | `Dictionary` (optional) | Auto-disconnect options |
-| `tunDriver` | `String` | Currently `xray_fd` |
-| `tunFdEnvironmentKey` | `String` | Currently `XRAY_TUN_FD` |
-| `requireTun` | `Bool` | Always `true` in Packet Tunnel mode |
+New approach:
+- Runtime moved to `macos/runtime/`.
+- Plugin builds/embeds `dart_v2ray_runtime_helper` and packages runtime automatically.
+- Desktop runtime resolution prefers helper in `Contents/Helpers`.
 
-Treat unknown keys as optional for forward compatibility.
+### What to remove from existing apps
+
+- Remove custom extension Run Script phases that copied files from `.symlinks/plugins/dart_v2ray/macos/bin`.
+- Remove references to `DART_V2RAY_MACOS_RUNTIME_DIR` and legacy `macos/bin` paths.
 
 ---
 
-## Post-Build Verification
+## Verification checklist
 
-After a Debug build, verify that the extension resources were copied correctly:
+After building Runner and extension:
 
 ```bash
-ls -lh build/macos/Build/Products/Debug/\
-YourApp.app/Contents/PlugIns/XrayTunnel.appex/Contents/Resources/
-# Expected: xray (executable), geoip.dat, geosite.dat
-
-file build/.../XrayTunnel.appex/Contents/Resources/xray
-# Expected: Mach-O universal binary with 2 architectures: [x86_64] [arm64]
+ls -l YourApp.app/Contents/Helpers/dart_v2ray_runtime_helper
+ls -l YourApp.app/Contents/Resources/dart_v2ray_runtime/xray
+ls -l YourApp.app/Contents/PlugIns/XrayTunnel.appex/Contents/Helpers/dart_v2ray_runtime_helper
+ls -l YourApp.app/Contents/PlugIns/XrayTunnel.appex/Contents/Resources/dart_v2ray_runtime/xray
 ```
 
----
-
-## Troubleshooting
-
-| Symptom | Cause | Fix |
-|---|---|---|
-| `dart_v2ray(macOS): runtime files missing from the plugin` | `macos/bin/` files absent or excluded by `.gitignore` | Commit files; verify `.gitignore` no longer excludes them |
-| `Bundled xray executable not found in extension resources` | Run Script did not copy files into `.appex` | Check `ENABLE_USER_SCRIPT_SANDBOXING = No`; verify `SRCROOT` path in script |
-| `Xray process terminated with status: 255` | `xray` binary crashed immediately | Verify `lipo -info macos/bin/xray` shows both architectures; check executable bit |
-| Sandbox / network access errors in extension | Missing entitlements | Add `com.apple.security.network.client` to `XrayTunnel.entitlements` |
-| Build cycle / archive error on `Runner` | `Embed Foundation Extensions` before CocoaPods phase | Reorder Build Phases per the table above |
-| Flutter symbols in extension linker errors | Extension links Flutter/plugin frameworks | Set `Pods_XrayTunnel.framework` to Do Not Embed |
-| Tunnel connects but no traffic | Xray JSON config missing valid inbound or geodata | Verify `geoip.dat`/`geosite.dat` are in extension resources; check inbound config |
-| `initialize` / `start` fails with "xray not found" | `DiscoverRuntimePaths` could not locate binary | Verify `Contents/Resources/xray` exists; as override set `XRAY_EXECUTABLE` |
-
-### Checking runtime discovery
-
-```bash
-# In the host app bundle (proxy mode)
-ls -l YourApp.app/Contents/Resources/xray
-
-# In the extension bundle (VPN mode)
-ls -l YourApp.app/Contents/PlugIns/XrayTunnel.appex/Contents/Resources/xray
-```
-
-Use **Console.app** filtering by `XrayTunnel` process name to read extension
-runtime logs, including `xray` stdout/stderr.
+Both helper and `xray` must exist and be executable.
 
 ---
 
-## Notes
+## What remains host-project-specific and why
 
-- macOS does not use `XRay.xcframework` — that is an iOS-only flow.
-- `getDesktopDebugLogs()` is available on macOS and returns plugin-log metadata
-  and tail content from a temp log file.
-- If your Xray JSON includes `log.access` / `log.error` paths,
-  `getDesktopDebugLogs()` also returns those log files' tail content.
-- Full-tunnel behavior depends on your macOS signing/entitlements distribution
-  setup for Network Extension + App Group.
-- `onStatusChanged` emits the same 12-field payload contract used by all desktop targets.
+1. **Creating Packet Tunnel target**: plugin cannot safely create/own arbitrary targets in every host Xcode project.
+2. **Entitlements and provisioning**: tied to developer account/team IDs, profiles, and app identifiers.
+3. **Signing policy decisions**: distribution/development signing is project-specific.
+4. **Network Extension capability review posture**: App Store justification metadata is app-specific.
 
----
-
-## Xray-core TUN Implementation Plan
-
-For implementing full-tunnel (`requireTun: true`) using Xray-core's native TUN FD
-primitives and proper routing anti-loop, refer to:
-
-- [`XRAY_CORE_TUN_IMPLEMENTATION_PLAN.md`](./XRAY_CORE_TUN_IMPLEMENTATION_PLAN.md)
+Everything else (runtime artifacts, packaging logic, helper launch model, runtime pathing) is now plugin-owned.

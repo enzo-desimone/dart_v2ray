@@ -50,10 +50,11 @@ Per il plugin Flutter su macOS usare due modalità chiare:
 - Logging separato per extension (file in App Group container).
 
 > **Stato**: completato. I file runtime sono ora committati nel plugin a
-> `macos/bin/` (universal binary arm64+x86_64). Un Run Script nel target
-> `XrayTunnel` li copia nell'`.appex` a build time via
-> `Flutter/ephemeral/.symlinks/plugins/dart_v2ray/macos/bin`.
-> Vedere la [guida macOS](./README.md#native-setup--xraytunnel-extension-requiretun-true).
+> `macos/runtime/` (universal binary arm64+x86_64). La packaging pipeline
+> è plugin-owned: script phase CocoaPods copia runtime in
+> `Contents/Resources/dart_v2ray_runtime` e compila/embedda helper in
+> `Contents/Helpers/dart_v2ray_runtime_helper`.
+> Vedere la [guida macOS](./README.md).
 
 ### 2) Inbound TUN guidato da FD (approccio primario)
 
@@ -111,7 +112,7 @@ Metriche minime da esporre a Flutter:
 
 - ~~Isolare un runner Xray dentro extension con input JSON validato.~~
 - ~~Garantire packaging runtime files nella extension.~~ → runtime files
-  committati in `macos/bin/`; Run Script copia nell'`.appex` a build time.
+  committati in `macos/runtime/`; script phase plugin-owned li distribuisce nel bundle target.
 - Implementare log collection via App Group.
 
 ### Fase B — TUN FD path

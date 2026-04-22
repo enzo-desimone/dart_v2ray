@@ -906,12 +906,27 @@ DesktopV2rayCore::RuntimePaths DesktopV2rayCore::DiscoverRuntimePaths() const {
   }
 
   for (const auto& root : expanded_roots) {
-    const std::vector<std::filesystem::path> candidates = {
+    const std::vector<std::filesystem::path> helper_candidates = {
+        root / "dart_v2ray_runtime_helper",
+        root / "Helpers" / "dart_v2ray_runtime_helper",
+        root / "Contents" / "Helpers" / "dart_v2ray_runtime_helper",
+    };
+    for (const auto& candidate : helper_candidates) {
+      if (file_exists(candidate)) {
+        paths.xray_executable = candidate.string();
+        return paths;
+      }
+    }
+
+    const std::vector<std::filesystem::path> xray_candidates = {
+        root / "Resources" / "dart_v2ray_runtime" / "xray",
+        root / "dart_v2ray_runtime" / "xray",
         root / "xray",
         root / "bin" / "xray",
+        root / "macos" / "runtime" / "xray",
         root / "macos" / "bin" / "xray",
     };
-    for (const auto& candidate : candidates) {
+    for (const auto& candidate : xray_candidates) {
       if (file_exists(candidate)) {
         paths.xray_executable = candidate.string();
         return paths;
@@ -934,7 +949,7 @@ std::string DesktopV2rayCore::ValidateRuntime(const RuntimePaths& paths, bool tu
     const std::string error = BuildMissingXrayError();
 #else
     const std::string error =
-        "xray executable could not be located. Set XRAY_EXECUTABLE or add xray to PATH.";
+        "xray runtime helper/executable could not be located. Set XRAY_EXECUTABLE or add xray to PATH.";
 #endif
 #if defined(_WIN32)
     LogLine("ValidateRuntime failed: " + error);

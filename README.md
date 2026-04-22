@@ -22,7 +22,7 @@ auto-disconnect, and share-link parsing (`vless://`, `vmess://`, `trojan://`,
 | iOS | Available | `XRay.xcframework` auto-download at `pod install` (override supported) | Packet Tunnel target + App Group + matching identifiers |
 | Windows | Available, tested | Auto-download `Xray-windows-64.zip` at CMake configure | Run as Administrator for TUN workflows |
 | Linux | Available (not fully team-validated) | Runtime binaries must be reachable in deployment | Environment/package permissions depend on distro |
-| macOS | Available | Bundled inside the plugin (`macos/bin/`); no host-app setup required | Proxy mode minimal; TUN needs Packet Tunnel + App Group + `Tun2SocksKit` |
+| macOS | Available | Bundled inside the plugin (`macos/runtime/`) with helper-tool packaging | Proxy mode minimal; TUN needs Packet Tunnel + App Group + extension signing/capabilities |
 
 ## Installation
 
@@ -148,13 +148,13 @@ Linux:
 
 macOS:
 - No manual runtime setup required. `xray`, `geoip.dat`, and `geosite.dat`
-  are committed inside the plugin at `macos/bin/` as a universal binary
-  (arm64 + x86_64). The plugin is self-contained; no host-app `macos/bin/`
-  or `DART_V2RAY_MACOS_RUNTIME_DIR` needed.
+  are committed inside the plugin at `macos/runtime/` as a universal binary
+  (arm64 + x86_64) plus plugin-owned helper-tool embedding into
+  `Contents/Helpers/dart_v2ray_runtime_helper`.
 - For TUN mode (`requireTun: true`), add a `XrayTunnel` Packet Tunnel
-  extension target, configure a shared App Group, link `Tun2SocksKit`,
-  and add a Run Script to copy runtime files from the plugin into the
-  extension bundle. See the [macOS Guide](docs/platforms/macos/README.md).
+  extension target and configure shared App Group/signing/capabilities.
+  Runtime packaging is plugin-owned via pod script phase. See the
+  [macOS Guide](docs/platforms/macos/README.md).
 
 ## Documentation Hub
 
