@@ -36,6 +36,9 @@
 #include <sys/socket.h>
 #include <unistd.h>
 #endif
+#if defined(__APPLE__)
+#include "../macos/xray_bridge_go/include/libxraybridge.h"
+#endif
 
 namespace dart_v2ray {
 
@@ -844,85 +847,15 @@ DesktopV2rayCore::RuntimePaths DesktopV2rayCore::DiscoverRuntimePaths() const {
   }
 
 #else
+#if defined(__APPLE__)
+  paths.xray_executable = "linked:xray-core";
+#else
   const char* env_xray = std::getenv("XRAY_EXECUTABLE");
   if (env_xray != nullptr && std::string(env_xray).size() > 0) {
     paths.xray_executable = std::string(env_xray);
-    return paths;
+  } else {
+    paths.xray_executable = "xray";
   }
-
-  // Keep Linux behavior unchanged: rely on env var or PATH.
-#if defined(__APPLE__)
-  auto file_exists = [](const std::filesystem::path& path) -> bool {
-    if (path.empty()) {
-      return false;
-    }
-    std::error_code ec;
-    if (!std::filesystem::exists(path, ec) ||
-        !std::filesystem::is_regular_file(path, ec)) {
-      return false;
-    }
-    const std::string native_path = path.string();
-    return access(native_path.c_str(), X_OK) == 0;
-  };
-
-  std::vector<std::filesystem::path> search_roots;
-
-  uint32_t executable_path_size = 0;
-  _NSGetExecutablePath(nullptr, &executable_path_size);
-  if (executable_path_size > 0) {
-    std::string executable_path_buffer(executable_path_size, '\0');
-    if (_NSGetExecutablePath(executable_path_buffer.data(), &executable_path_size) == 0) {
-      std::error_code ec;
-      std::filesystem::path executable_path(executable_path_buffer.c_str());
-      std::filesystem::path executable_dir =
-          std::filesystem::weakly_canonical(executable_path, ec).parent_path();
-      if (executable_dir.empty()) {
-        executable_dir = executable_path.parent_path();
-      }
-      if (!executable_dir.empty()) {
-        search_roots.push_back(executable_dir);
-        // macOS app bundle Resources directory.
-        search_roots.push_back(executable_dir / ".." / "Resources");
-      }
-    }
-  }
-
-  std::error_code cwd_error;
-  const std::filesystem::path current_directory = std::filesystem::current_path(cwd_error);
-  if (!cwd_error && !current_directory.empty()) {
-    search_roots.push_back(current_directory);
-  }
-
-  std::vector<std::filesystem::path> expanded_roots = search_roots;
-  for (const auto& root : search_roots) {
-    std::filesystem::path cursor = root;
-    for (int i = 0; i < 8; ++i) {
-      cursor = cursor.parent_path();
-      if (cursor.empty()) {
-        break;
-      }
-      expanded_roots.push_back(cursor);
-    }
-  }
-
-  for (const auto& root : expanded_roots) {
-    const std::vector<std::filesystem::path> candidates = {
-        root / "xray",
-        root / "bin" / "xray",
-        root / "macos" / "bin" / "xray",
-    };
-    for (const auto& candidate : candidates) {
-      if (file_exists(candidate)) {
-        paths.xray_executable = candidate.string();
-        return paths;
-      }
-    }
-  }
-
-  // Final fallback: rely on shell PATH.
-  paths.xray_executable = "xray";
-#else
-  paths.xray_executable = "xray";
 #endif
 #endif
   return paths;
@@ -1240,6 +1173,20 @@ std::string DesktopV2rayCore::Start(const std::string& config, const StartOption
   }
   process_ = std::move(process);
 #else
+#if defined(__APPLE__)
+  const int bridge_code = XrayStartFromConfigPath(config_path_.c_str());
+  if (bridge_code != 0) {
+    char* bridge_error = XrayLastError();
+    const std::string reason = bridge_error != nullptr ? std::string(bridge_error) : "unknown bridge error";
+    if (bridge_error != nullptr) {
+      XrayFreeString(bridge_error);
+    }
+    return fail_start("Unable to start linked Xray core (code=" + std::to_string(bridge_code) + "): " + reason);
+  }
+  auto process = std::make_unique<ProcessHandle>();
+  process->pid = 1;
+  process_ = std::move(process);
+#else
   pid_t pid = fork();
   if (pid == 0) {
     execlp(runtime_paths_.xray_executable.c_str(), runtime_paths_.xray_executable.c_str(), "run",
@@ -1253,6 +1200,7 @@ std::string DesktopV2rayCore::Start(const std::string& config, const StartOption
   auto process = std::make_unique<ProcessHandle>();
   process->pid = pid;
   process_ = std::move(process);
+#endif
 #endif
 
 #if defined(_WIN32)
@@ -1376,7 +1324,12 @@ std::string DesktopV2rayCore::Stop(bool from_auto_disconnect) {
   CloseHandle(process_->pi.hProcess);
   CloseHandle(process_->pi.hThread);
 #else
+#if defined(__APPLE__)
+  const int bridge_stop_code = XrayStop();
+  (void)bridge_stop_code;
+#else
   kill(process_->pid, SIGTERM);
+#endif
 #endif
 
   process_.reset();
@@ -1444,7 +1397,18 @@ std::string DesktopV2rayCore::GetCoreVersion() {
 #endif
     return "xray-unavailable";
   }
-#if defined(_WIN32)
+#if defined(__APPLE__)
+  char* version = XrayVersion();
+  if (version == nullptr) {
+    return "xray-unavailable";
+  }
+  std::string output(version);
+  XrayFreeString(version);
+  if (output.empty()) {
+    return "xray-unavailable";
+  }
+  return output;
+#elif defined(_WIN32)
   std::ostringstream command;
   command << '"' << runtime_paths_.xray_executable << '"' << " version";
   FILE* pipe = _popen(command.str().c_str(), "r");
