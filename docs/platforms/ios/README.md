@@ -55,4 +55,9 @@ Pass the providerBundleIdentifier and groupIdentifier to the initializeV2ray fun
 await flutterV2ray.initializeV2ray(
     providerBundleIdentifier: "IOS Provider bundle indentifier",
     groupIdentifier: "IOS Group Identifier",
+<<<<<<< HEAD
 );
+=======
+);
+```
+>>>>>>> see
