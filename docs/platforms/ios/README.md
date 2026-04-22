@@ -1,72 +1,59 @@
-# iOS Guide
+## Podfile
 
-This guide covers iOS-specific setup for `dart_v2ray`.
+Open ios/Podfile and set the platform to iOS 15
 
-## Current Status
-
-- Plugin implementation: available
-- Team validation status: not listed as fully tested in this repository cycle
-
-## Required Native Setup
-
-1. Add a Packet Tunnel Network Extension target.
-2. Configure a shared App Group for app + extension.
-3. Pass matching identifiers to `initialize(...)`.
-4. Provide an `XRay.xcframework` source before `pod install`.
-
-## Initialize
-
-```dart
-await v2ray.initialize(
-  providerBundleIdentifier: 'com.example.myapp',
-  groupIdentifier: 'group.com.example.myapp',
-);
+```Podfile
+# Uncomment this line to define a global platform for your project
+platform :ios, '15.0'
 ```
-
-`providerBundleIdentifier` and `groupIdentifier` must match your native iOS
-provisioning setup.
-
-## Start
-
-```dart
-await v2ray.start(
-  remark: 'iOS profile',
-  config: configJson,
-  requireTun: true,
-);
-```
-
-## Connection Mode
-
-- iOS uses the Packet Tunnel extension flow.
-- `requireTun` is accepted by the Dart API for consistency, but iOS currently
-  runs through the extension path (no proxy-only switch).
-
-## Framework Source
-
-By default, the plugin downloads this hosted archive and verifies it with SHA256:
-
-```text
-https://github.com/shafiquecbl/flutter_v2ray_plus/releases/download/framework-v1.0.0/XRay.xcframework.zip
-SHA256: ab14d797a3efe5cd148054e7bd1923d95b355cee9b0a36e5a81782c6fd517d1a
-```
-
-No extra setup is required for default behavior.
-
-If you need a different source, configure one of the following before `pod install`:
 
 ```bash
-# Option 1: local archive
-export DART_V2RAY_IOS_FRAMEWORK_ZIP_PATH=/absolute/path/XRay.xcframework.zip
-
-# Option 2: hosted archive
-export DART_V2RAY_IOS_FRAMEWORK_URL=https://your-domain/releases/XRay.xcframework.zip
-export DART_V2RAY_IOS_FRAMEWORK_SHA256=your_sha256_here
+cd ios/
+pod install
 ```
 
-## Troubleshooting
+## Xcode Setup
 
-- Extension cannot start: verify Packet Tunnel target and entitlements.
-- No data exchange between app and extension: verify App Group string matches
-  exactly across targets.
-- Pod install issues: check framework env variables and URL/hash correctness.
+- Open Runner.xcworkspace with Xcode.
+
+### Runner target
+
+- Set the Minimum Deployment Target to iOS 15.
+- Go to the Signing & Capabilities tab.
+- Add the App Group capability.
+- Add the Network Extension capability and activate Packet Tunnel.
+
+### XrayTunnel target
+
+- Add a Network Extension Target with the name **XrayTunnel**
+- Set the Minimum Deployment Target to iOS 15.
+- Add the App Group capability.
+- Add the Network Extension capability and activate Packet Tunnel.
+
+#### Add XrayTunnel dependencies
+
+- Open the Runner project and go to the Package Dependencies tab.
+- Add https://github.com/EbrahimTahernejad/Tun2SocksKit to the XrayTunnel Target.
+- Open the **General** tab of the **XrayTunnel** Target.
+- Add **XRay.xcframework** to Frameworks and Libraries.
+- Add **libresolv.tbd** to Frameworks and Libraries.
+
+> **Note**: The XRay.xcframework is automatically downloaded from GitHub Releases during `pod install`. You don't need to download it manually.
+
+<br>
+
+- Open ios/XrayTunnel/PacketTunnelProvider.swift.
+- Paste the content of [this file](./example/ios/XrayTunnel/PacketTunnelProvider.swift).
+- Open the Runner Target > Build Phases tab.
+- Move **Embed Foundation Extensions** to the bottom of **Copy Bundle Resources**.
+
+## flutter
+
+Pass the providerBundleIdentifier and groupIdentifier to the initializeV2ray function:
+
+```dart
+await flutterV2ray.initializeV2ray(
+    providerBundleIdentifier: "IOS Provider bundle indentifier",
+    groupIdentifier: "IOS Group Identifier",
+);
+```
