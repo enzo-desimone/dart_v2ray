@@ -15,16 +15,12 @@ auto-disconnect support.
   s.prepare_command  = <<-CMD
     set -e
 
-    BIN_DIR="$(pwd)/bin"
-    XRAY_BIN="$BIN_DIR/xray"
-    GEOIP_FILE="$BIN_DIR/geoip.dat"
-    GEOSITE_FILE="$BIN_DIR/geosite.dat"
+    PLUGIN_BIN_DIR="$(pwd)/bin"
+    XRAY_BIN="$PLUGIN_BIN_DIR/xray"
+    GEOIP_FILE="$PLUGIN_BIN_DIR/geoip.dat"
+    GEOSITE_FILE="$PLUGIN_BIN_DIR/geosite.dat"
 
-    echo "dart_v2ray(macOS): pwd=$(pwd)"
-    echo "dart_v2ray(macOS): BIN_DIR=$BIN_DIR"
-    echo "dart_v2ray(macOS): DART_V2RAY_MACOS_RUNTIME_DIR=${DART_V2RAY_MACOS_RUNTIME_DIR:-<unset>}"
-
-    mkdir -p "$BIN_DIR"
+    mkdir -p "$PLUGIN_BIN_DIR"
 
     copy_runtime_file() {
       FILE_NAME="$1"
@@ -32,40 +28,56 @@ auto-disconnect support.
       SOURCE_FILE="$SOURCE_DIR/$FILE_NAME"
 
       if [ ! -f "$SOURCE_FILE" ]; then
-        echo "dart_v2ray(macOS): missing runtime file in DART_V2RAY_MACOS_RUNTIME_DIR: $SOURCE_FILE" >&2
-        exit 1
+        return 1
       fi
 
-      cp "$SOURCE_FILE" "$BIN_DIR/$FILE_NAME"
+      cp "$SOURCE_FILE" "$PLUGIN_BIN_DIR/$FILE_NAME"
+      return 0
     }
 
-    if [ ! -f "$XRAY_BIN" ] || [ ! -f "$GEOIP_FILE" ] || [ ! -f "$GEOSITE_FILE" ]; then
+    has_all_runtime_files() {
+      [ -f "$XRAY_BIN" ] && [ -f "$GEOIP_FILE" ] && [ -f "$GEOSITE_FILE" ]
+    }
+
+    if ! has_all_runtime_files; then
       if [ -n "${DART_V2RAY_MACOS_RUNTIME_DIR:-}" ]; then
-        echo "dart_v2ray(macOS): copying runtime files from DART_V2RAY_MACOS_RUNTIME_DIR"
-        ls -la "$DART_V2RAY_MACOS_RUNTIME_DIR" || true
+        echo "dart_v2ray(macOS): using DART_V2RAY_MACOS_RUNTIME_DIR=$DART_V2RAY_MACOS_RUNTIME_DIR"
 
-        copy_runtime_file "xray" "$DART_V2RAY_MACOS_RUNTIME_DIR"
-        copy_runtime_file "geoip.dat" "$DART_V2RAY_MACOS_RUNTIME_DIR"
-        copy_runtime_file "geosite.dat" "$DART_V2RAY_MACOS_RUNTIME_DIR"
-      else
-        cat >&2 <<'MSG'
-dart_v2ray(macOS): missing runtime files.
-Provide all of the following files in the plugin bin directory before `pod install`:
-  - bin/xray
-  - bin/geoip.dat
-  - bin/geosite.dat
-
-Or set DART_V2RAY_MACOS_RUNTIME_DIR to a folder containing:
-  xray, geoip.dat, geosite.dat
-MSG
-        exit 1
+        copy_runtime_file "xray" "$DART_V2RAY_MACOS_RUNTIME_DIR" || true
+        copy_runtime_file "geoip.dat" "$DART_V2RAY_MACOS_RUNTIME_DIR" || true
+        copy_runtime_file "geosite.dat" "$DART_V2RAY_MACOS_RUNTIME_DIR" || true
       fi
     fi
 
-    chmod +x "$XRAY_BIN" || true
+    if ! has_all_runtime_files; then
+      HOST_MACOS_BIN_DIR="$(cd .. && pwd)/macos/bin"
+      echo "dart_v2ray(macOS): trying host runtime directory: $HOST_MACOS_BIN_DIR"
 
-    echo "dart_v2ray(macOS): final bin contents"
-    ls -la "$BIN_DIR" || true
+      copy_runtime_file "xray" "$HOST_MACOS_BIN_DIR" || true
+      copy_runtime_file "geoip.dat" "$HOST_MACOS_BIN_DIR" || true
+      copy_runtime_file "geosite.dat" "$HOST_MACOS_BIN_DIR" || true
+    fi
+
+    if ! has_all_runtime_files; then
+      cat >&2 <<'MSG'
+dart_v2ray(macOS): missing runtime files.
+
+Expected one of these setups:
+
+1) Set DART_V2RAY_MACOS_RUNTIME_DIR to a folder containing:
+   - xray
+   - geoip.dat
+   - geosite.dat
+
+2) Put the files in the host Flutter app at:
+   - macos/bin/xray
+   - macos/bin/geoip.dat
+   - macos/bin/geosite.dat
+MSG
+      exit 1
+    fi
+
+    chmod +x "$XRAY_BIN" || true
   CMD
 
   s.source_files = 'Classes/**/*'
