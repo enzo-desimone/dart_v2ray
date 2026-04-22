@@ -14,23 +14,12 @@ auto-disconnect support.
 
   s.prepare_command  = <<-CMD
     set -e
-
-    PLUGIN_BIN_DIR="$(pwd)/bin"
-    XRAY_BIN="$PLUGIN_BIN_DIR/xray"
-    GEOIP_FILE="$PLUGIN_BIN_DIR/geoip.dat"
-    GEOSITE_FILE="$PLUGIN_BIN_DIR/geosite.dat"
-
-    missing=""
-    [ -f "$XRAY_BIN" ]     || missing="${missing}\\n  - $XRAY_BIN"
-    [ -f "$GEOIP_FILE" ]   || missing="${missing}\\n  - $GEOIP_FILE"
-    [ -f "$GEOSITE_FILE" ] || missing="${missing}\\n  - $GEOSITE_FILE"
-
-    if [ -n "$missing" ]; then
-      printf 'dart_v2ray(macOS): runtime files missing from the plugin. Commit these files into macos/bin/ in the dart_v2ray package:\\n%b\\n' "$missing" >&2
+    BRIDGE_LIB="$(pwd)/xray_bridge_go/build/universal/libxraybridge.a"
+    BRIDGE_HEADER="$(pwd)/xray_bridge_go/build/universal/libxraybridge.h"
+    if [ ! -f "$BRIDGE_LIB" ] || [ ! -f "$BRIDGE_HEADER" ]; then
+      echo "error: missing Go bridge artifacts. Run macos/xray_bridge_go/scripts/build_macos_bridge.sh first." >&2
       exit 1
     fi
-
-    chmod +x "$XRAY_BIN"
   CMD
 
   s.source_files = 'Classes/**/*'
@@ -38,7 +27,8 @@ auto-disconnect support.
   s.resource_bundles = {
     'dart_v2ray_privacy' => ['Resources/PrivacyInfo.xcprivacy']
   }
-  s.resources = ['bin/xray', 'bin/geoip.dat', 'bin/geosite.dat']
+  s.resources = ['bin/geoip.dat', 'bin/geosite.dat']
+  s.vendored_libraries = 'xray_bridge_go/build/universal/libxraybridge.a'
   s.static_framework = true
   s.libraries = 'c++'
   s.frameworks = 'NetworkExtension'
@@ -49,7 +39,8 @@ auto-disconnect support.
     'DEFINES_MODULE' => 'YES',
     'CLANG_CXX_LANGUAGE_STANDARD' => 'c++17',
     'CLANG_CXX_LIBRARY' => 'libc++',
-    'OTHER_LDFLAGS' => '$(inherited) -lc++'
+    'OTHER_LDFLAGS' => '$(inherited) -lc++',
+    'HEADER_SEARCH_PATHS' => '$(inherited) "${PODS_TARGET_SRCROOT}/xray_bridge_go/build/universal" "${PODS_TARGET_SRCROOT}/xray_bridge_go/include"'
   }
   s.user_target_xcconfig = {
     'OTHER_LDFLAGS' => '$(inherited) -lc++'
