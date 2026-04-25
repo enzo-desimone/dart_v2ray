@@ -57,7 +57,6 @@ auto-disconnect support, and status streaming.
   CMD
 
   s.pod_target_xcconfig = { 'DEFINES_MODULE' => 'YES' }
-  s.xcconfig = { 'OTHER_LDFLAGS' => '-framework LibXray' }
   s.libraries = 'resolv'
   s.vendored_frameworks = 'LibXray.xcframework'
   s.swift_version = '5.0'

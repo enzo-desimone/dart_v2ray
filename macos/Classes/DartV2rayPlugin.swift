@@ -77,11 +77,10 @@ public class DartV2rayPlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
             guard let self = self else { return }
 
             let status = self.lastStatus
-            var seconds = 0
 
             if status == "CONNECTED" {
                 let elapsed = Date().timeIntervalSince(self.packetTunnelManager?.connectedDate ?? Date())
-                seconds = Int(elapsed)
+                let seconds = Int(elapsed)
 
                 Task {
                     do {
@@ -100,12 +99,16 @@ public class DartV2rayPlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
                         }
 
                         let remainingResponse = try await self.packetTunnelManager?.sendProviderMessage(data: "auto_disconnect_remaining".data(using: .utf8)!)
-                        var remainingTimeStr: String? = nil
+                        let remainingTimeStr: String?
                         if let remainingResponse = remainingResponse {
                             let remaining = String(decoding: remainingResponse, as: UTF8.self)
                             if let remainingInt = Int(remaining), remainingInt >= 0 {
                                 remainingTimeStr = remaining
+                            } else {
+                                remainingTimeStr = nil
                             }
+                        } else {
+                            remainingTimeStr = nil
                         }
 
                         await MainActor.run {
@@ -118,7 +121,7 @@ public class DartV2rayPlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
                     }
                 }
             } else {
-                self.emitStatusEvent(seconds: seconds, status: status)
+                self.emitStatusEvent(seconds: 0, status: status)
             }
         })
     }
