@@ -22,7 +22,7 @@ auto-disconnect, and share-link parsing (`vless://`, `vmess://`, `trojan://`,
 | iOS | Available | `XRay.xcframework` auto-download at `pod install` (override supported) | Packet Tunnel target + App Group + matching identifiers |
 | Windows | Available, tested | Auto-download `Xray-windows-64.zip` at CMake configure | Run as Administrator for TUN workflows |
 | Linux | Available (not fully team-validated) | Runtime binaries must be reachable in deployment | Environment/package permissions depend on distro |
-| macOS | Available | Linked Go bridge (`c-archive`) built from `xray-core` | Proxy mode in-process; TUN needs Packet Tunnel + App Group in host app |
+| macOS | Available | `LibXray.xcframework` auto-download at `pod install` (override supported) | Packet Tunnel extension + App Group + signed entitlements |
 
 ## Installation
 
@@ -147,12 +147,14 @@ Linux:
   depending on distro/package format.
 
 macOS:
-- Build the Go bridge before `pod install`:
-  `./macos/xray_bridge_go/scripts/build_macos_bridge.sh`.
-- Xray runs in-process via linked `libxraybridge.a` (no bundled executable).
-- For TUN mode (`requireTun: true`), add a `XrayTunnel` Packet Tunnel
-  extension target and shared App Group. See the
-  [macOS Guide](docs/platforms/macos/README.md).
+- Add a `XrayTunnel` Packet Tunnel extension target and shared App Group.
+- Pass matching `providerBundleIdentifier` and `groupIdentifier` to
+  `initialize(...)`.
+- `LibXray.xcframework` is downloaded automatically by default at `pod install`.
+  You can override source/hash with `DART_V2RAY_MACOS_FRAMEWORK_*`.
+- For distribution on the Mac App Store, keep Runner + extension signing,
+  entitlements, and provisioning fully aligned.
+- Full setup: [macOS Guide](docs/platforms/macos/README.md).
 
 ## Documentation Hub
 
